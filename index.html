@@ -233,18 +233,22 @@
   }
   .addr-chip button:hover { color: var(--critical); }
 
-  /* ── Contract config form ───────────────────────────────── */
-  .cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; }
-  .cfg-field label {
-    display: block; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
-    text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px;
+  /* ── Inline-editable table values ───────────────────────── */
+  .detail-table td.num input {
+    font: inherit; font-size: 13.5px; font-weight: 550; color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    background: transparent; border: 0; border-bottom: 1px dashed var(--baseline);
+    text-align: right; width: 120px; max-width: 100%;
+    padding: 2px 2px 3px; outline: 0; border-radius: 0;
+    transition: border-color .15s;
   }
-  .cfg-field input {
-    width: 100%; border: 1px solid var(--border); border-radius: 10px;
-    background: var(--page); color: var(--text-primary); font: inherit; font-size: 14px;
-    padding: 8px 11px; outline: 0; transition: border-color .15s, box-shadow .15s;
-  }
-  .cfg-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .detail-table td.num input:hover { border-bottom-color: var(--text-muted); }
+  .detail-table td.num input:focus { border-bottom: 1px solid var(--accent); }
+  .detail-table td.num input.wide { width: 210px; font-variant-numeric: normal; }
+  .detail-table td.num input[type="date"] { width: 150px; font-variant-numeric: normal; }
+  .detail-table td.num input::-webkit-outer-spin-button,
+  .detail-table td.num input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .detail-table td.num input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
   .cfg-actions { margin-top: 14px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .cfg-actions button {
     font: inherit; font-size: 13px; font-weight: 550; color: var(--text-secondary);
@@ -375,13 +379,28 @@
       </svg>
     </summary>
     <div class="details-body">
-      <div class="details-h">Recoupment figures</div>
-      <table class="detail-table" aria-label="Recoupment figures">
+      <div class="details-h">Contract &amp; recoupment figures</div>
+      <p class="wallet-note">
+        Values with a <strong>dashed underline are editable</strong> — forked this dashboard? Enter
+        your own contract and every figure on the page recalculates instantly. Edits are saved in
+        <strong>this browser only</strong> (localStorage); the file itself never changes, so nothing
+        personal ends up in a repo.
+      </p>
+      <table class="detail-table" aria-label="Contract and recoupment figures">
         <tbody>
-          <tr><th>Gross capital invested</th><td class="num" id="tblGross">$206,000</td></tr>
-          <tr><th>Prepaid power bucket (prepaid upfront, no monthly bills)</th><td class="num" id="tblPrepaid">$85,000</td></tr>
-          <tr><th id="tblTaxLabel">Year-1 tax savings (70% depreciation × 42% bracket)</th><td class="num" id="tblTaxSavings">$60,564</td></tr>
+          <tr><th>Miner model</th><td class="num"><input class="wide" id="cfgModel" data-key="minerModel" type="text" maxlength="40" aria-label="Miner model"></td></tr>
+          <tr><th>Machines</th><td class="num"><input id="cfgMachines" data-key="machines" type="number" min="1" step="1" aria-label="Machines"></td></tr>
+          <tr><th>Hashrate per machine (TH/s)</th><td class="num"><input id="cfgTh" data-key="thPerMachine" type="number" min="1" step="1" aria-label="Hashrate per machine in terahash per second"></td></tr>
+          <tr><th>Fleet hashrate</th><td class="num" id="tblHashrate">—</td></tr>
+          <tr><th>Pool fee (%)</th><td class="num"><input id="cfgFee" data-key="poolFeePct" type="number" min="0" max="100" step="0.1" aria-label="Pool fee percent"></td></tr>
+          <tr><th>Block reward (BTC)</th><td class="num"><input id="cfgReward" data-key="blockReward" type="number" min="0.00000001" step="0.001" aria-label="Block reward in BTC"></td></tr>
+          <tr><th>Gross capital invested (USD)</th><td class="num"><input id="cfgGross" data-key="grossCapital" data-fmt="usd" data-min="1" type="text" inputmode="decimal" aria-label="Gross capital in US dollars"></td></tr>
+          <tr><th>Prepaid power bucket (USD, prepaid upfront — no monthly bills)</th><td class="num"><input id="cfgPrepaid" data-key="prepaidPower" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Prepaid power in US dollars"></td></tr>
+          <tr><th>Depreciation (%)</th><td class="num"><input id="cfgDep" data-key="depreciationPct" type="number" min="0" max="100" step="1" aria-label="Depreciation percent"></td></tr>
+          <tr><th>Tax bracket (%)</th><td class="num"><input id="cfgTax" data-key="taxBracketPct" type="number" min="0" max="100" step="1" aria-label="Tax bracket percent"></td></tr>
+          <tr><th>Year-1 tax savings (gross × depreciation × bracket)</th><td class="num" id="tblTaxSavings">$60,564</td></tr>
           <tr><th>True net capital invested</th><td class="num" id="tblNetCapital">$145,436</td></tr>
+          <tr><th>In-service date</th><td class="num"><input id="cfgDate" data-key="startDate" type="date" aria-label="In-service date"></td></tr>
           <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
           <tr><th>Estimated income to date (current daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
           <tr id="rowActual" hidden><th>Actual mined on-chain (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
@@ -389,25 +408,6 @@
           <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
         </tbody>
       </table>
-
-      <div class="details-h">Contract parameters (editable)</div>
-      <p class="wallet-note">
-        Forked this dashboard? Enter your own contract here — every figure on the page recalculates
-        instantly. Values are saved in <strong>this browser only</strong> (localStorage); the file
-        itself never changes, so nothing personal ends up in a repo.
-      </p>
-      <div class="cfg-grid">
-        <div class="cfg-field"><label for="cfgGross">Gross capital (USD)</label><input id="cfgGross" data-key="grossCapital" type="number" min="1" step="1000"></div>
-        <div class="cfg-field"><label for="cfgPrepaid">Prepaid power (USD)</label><input id="cfgPrepaid" data-key="prepaidPower" type="number" min="0" step="1000"></div>
-        <div class="cfg-field"><label for="cfgDep">Depreciation (%)</label><input id="cfgDep" data-key="depreciationPct" type="number" min="0" max="100" step="1"></div>
-        <div class="cfg-field"><label for="cfgTax">Tax bracket (%)</label><input id="cfgTax" data-key="taxBracketPct" type="number" min="0" max="100" step="1"></div>
-        <div class="cfg-field"><label for="cfgDate">In-service date</label><input id="cfgDate" data-key="startDate" type="date"></div>
-        <div class="cfg-field"><label for="cfgMachines">Machines</label><input id="cfgMachines" data-key="machines" type="number" min="1" step="1"></div>
-        <div class="cfg-field"><label for="cfgTh">TH/s per machine</label><input id="cfgTh" data-key="thPerMachine" type="number" min="1" step="1"></div>
-        <div class="cfg-field"><label for="cfgFee">Pool fee (%)</label><input id="cfgFee" data-key="poolFeePct" type="number" min="0" max="100" step="0.1"></div>
-        <div class="cfg-field"><label for="cfgReward">Block reward (BTC)</label><input id="cfgReward" data-key="blockReward" type="number" min="0.00000001" step="0.001"></div>
-        <div class="cfg-field"><label for="cfgModel">Miner model</label><input id="cfgModel" data-key="minerModel" type="text" maxlength="40"></div>
-      </div>
       <div class="cfg-actions">
         <button type="button" id="cfgReset">Reset to defaults</button>
         <span class="cfg-note" id="cfgTaxNote"></span>
@@ -587,11 +587,8 @@
       }
     }
 
-    // Details table
-    $("tblGross").textContent      = fmtUsd(gross);
-    $("tblPrepaid").textContent    = fmtUsd(cfg.prepaidPower);
-    $("tblTaxLabel").textContent   = "Year-1 tax savings (" + cfg.depreciationPct +
-      "% depreciation × " + cfg.taxBracketPct + "% bracket)";
+    // Details table (computed rows; editable rows are populated from cfg)
+    $("tblHashrate").textContent   = totalTh().toLocaleString("en-US") + " TH/s";
     $("tblTaxSavings").textContent = fmtUsd(tax);
     $("tblNetCapital").textContent = fmtUsd(gross - tax);
     $("tblDays").textContent      = Math.floor(days).toLocaleString("en-US");
@@ -762,33 +759,40 @@
   $("addrAdd").addEventListener("click", addAddress);
   $("addrInput").addEventListener("keydown", e => { if (e.key === "Enter") addAddress(); });
 
-  // ── Contract config form ──────────────────────────────────────────────
-  const cfgInputs = document.querySelectorAll(".cfg-grid input");
+  // ── Contract config (inline-editable table rows) ─────────────────────
+  const cfgInputs = document.querySelectorAll(".detail-table input[data-key]");
 
   function saveCfg() {
     try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) {}
   }
 
   function populateCfgForm() {
-    cfgInputs.forEach(inp => { inp.value = cfg[inp.dataset.key]; });
+    cfgInputs.forEach(inp => {
+      const v = cfg[inp.dataset.key];
+      inp.value = inp.dataset.fmt === "usd" ? Number(v).toLocaleString("en-US") : v;
+    });
   }
 
   cfgInputs.forEach(inp => {
     inp.addEventListener("change", () => {
       const key = inp.dataset.key;
       let v;
-      if (inp.type === "number") {
+      if (inp.dataset.fmt === "usd") {
+        v = parseFloat(inp.value.replace(/[^0-9.]/g, ""));
+        if (!Number.isFinite(v) || v < parseFloat(inp.dataset.min || "0")) { populateCfgForm(); return; }
+        v = Math.round(v);
+      } else if (inp.type === "number") {
         v = parseFloat(inp.value);
         const min = inp.min !== "" ? parseFloat(inp.min) : -Infinity;
         const max = inp.max !== "" ? parseFloat(inp.max) : Infinity;
-        if (!Number.isFinite(v) || v < min || v > max) { inp.value = cfg[key]; return; }
+        if (!Number.isFinite(v) || v < min || v > max) { populateCfgForm(); return; }
         if (key === "machines") v = Math.round(v);
       } else if (inp.type === "date") {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(inp.value)) { inp.value = cfg[key]; return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(inp.value)) { populateCfgForm(); return; }
         v = inp.value;
       } else {
         v = inp.value.trim();
-        if (!v) { inp.value = cfg[key]; return; }
+        if (!v) { populateCfgForm(); return; }
       }
       cfg[key] = v;
       saveCfg();
