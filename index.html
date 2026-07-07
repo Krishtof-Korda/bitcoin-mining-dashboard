@@ -23,6 +23,7 @@
     --btc-2:          #eb6834;
     --track:          #eeedea;
     --good:           #006300;
+    --critical:       #d03b3b;
     --chip:           #f3f4f6;
   }
   @media (prefers-color-scheme: dark) {
@@ -42,6 +43,7 @@
       --accent:         #3987e5;
       --track:          #26272b;
       --good:           #0ca30c;
+      --critical:       #e66767;
       --chip:           #202126;
     }
   }
@@ -196,6 +198,39 @@
   .methodology { font-size: 13px; color: var(--text-secondary); line-height: 1.65; margin: 4px 0 0; }
   .methodology a { color: var(--text-secondary); }
 
+  /* ── Wallet tracking ────────────────────────────────────── */
+  #cardMined { display: none; }
+  body.has-wallet #cardMined { display: block; }
+  #cardMined .value { font-size: 24px; white-space: nowrap; }
+  .wallet-note { font-size: 13px; color: var(--text-secondary); line-height: 1.65; margin: 4px 0 10px; }
+  .addr-field { display: flex; gap: 8px; }
+  .addr-field input {
+    flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--page); color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px;
+    padding: 9px 12px; outline: 0; transition: border-color .15s, box-shadow .15s;
+  }
+  .addr-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .addr-field button {
+    font: inherit; font-size: 13px; font-weight: 600; color: #fff;
+    background: var(--accent); border: 0; border-radius: 10px;
+    padding: 9px 18px; cursor: pointer;
+  }
+  .addr-field button:hover { filter: brightness(1.08); }
+  .addr-error { font-size: 12.5px; color: var(--critical); margin-top: 6px; min-height: 1em; }
+  .addr-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .addr-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--chip); border-radius: 8px; padding: 6px 8px 6px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .addr-chip button {
+    border: 0; background: transparent; color: var(--text-muted); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 4px;
+  }
+  .addr-chip button:hover { color: var(--critical); }
+
   footer { margin-top: 22px; font-size: 12.5px; color: var(--text-muted); text-align: center; }
   footer a { color: var(--text-muted); }
 </style>
@@ -240,6 +275,11 @@
       <div class="value" id="kpiMonthlyUsd">—</div>
       <div class="detail">Live run-rate × 30.44 days</div>
     </div>
+    <div class="card" id="cardMined">
+      <div class="label">Mined on-chain</div>
+      <div class="value" id="kpiMinedBtc">—</div>
+      <div class="detail" id="kpiMinedDetail">Tracked wallet</div>
+    </div>
   </div>
 
   <!-- Recoupment progress -->
@@ -263,7 +303,7 @@
 
     <div class="legend">
       <div class="key"><span class="swatch tax"></span><span class="k-label">Tax savings</span><span class="k-value">$60,564</span></div>
-      <div class="key"><span class="swatch accrued"></span><span class="k-label">Mined to date</span><span class="k-value" id="legendAccrued">—</span></div>
+      <div class="key"><span class="swatch accrued"></span><span class="k-label" id="legendAccruedLabel">Mined to date (est.)</span><span class="k-value" id="legendAccrued">—</span></div>
       <div class="key"><span class="swatch remaining"></span><span class="k-label">Remaining</span><span class="k-value" id="legendRemaining">—</span></div>
     </div>
   </section>
@@ -318,8 +358,9 @@
           <tr><th>Year-1 tax savings (70% depreciation × 42% bracket)</th><td class="num">$60,564</td></tr>
           <tr><th>True net capital invested</th><td class="num">$145,436</td></tr>
           <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
-          <tr><th>Accrued income to date (current daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
-          <tr><th>Total recovered (tax savings + accrued income)</th><td class="num" id="tblRecovered">—</td></tr>
+          <tr><th>Estimated income to date (current daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
+          <tr id="rowActual" hidden><th>Actual mined on-chain (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
+          <tr><th>Total recovered (tax savings + mining income)</th><td class="num" id="tblRecovered">—</td></tr>
           <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
         </tbody>
       </table>
@@ -336,11 +377,29 @@
         </tbody>
       </table>
 
+      <div class="details-h">Wallet tracking (optional)</div>
+      <p class="wallet-note">
+        Paste the payout address(es) your pool sends rewards to. The dashboard then shows the
+        <strong>actual BTC received on-chain</strong> and uses it (instead of the estimate) for the
+        recoupment bar. Addresses are read-only — they can never spend funds — and are saved in
+        <strong>this browser only</strong> (localStorage). They are never uploaded or committed anywhere.
+        Note: the total counts everything received by these addresses, not just mining payouts.
+      </p>
+      <div class="addr-field">
+        <input id="addrInput" type="text" autocomplete="off" spellcheck="false"
+               placeholder="bc1q… / 1… / 3…  payout address" aria-label="Bitcoin payout address">
+        <button type="button" id="addrAdd">Track</button>
+      </div>
+      <div class="addr-error" id="addrError"></div>
+      <div class="addr-list" id="addrList"></div>
+
       <div class="details-h">Methodology</div>
       <p class="methodology">
         Live data: <a href="https://www.coingecko.com" rel="noopener">CoinGecko</a> (BTC/USD) and
         <a href="https://blockchain.info" rel="noopener">Blockchain.info</a> (network difficulty), refreshed every 60&nbsp;seconds.
         Daily yield = 2,365&nbsp;TH/s × 86,400&nbsp;s × 3.125&nbsp;BTC block reward ÷ (difficulty × 2³²), net of the 2% pool fee.
+        On-chain wallet totals (when tracking is enabled) come from Blockchain.info with
+        <a href="https://mempool.space" rel="noopener">mempool.space</a> as fallback — read-only lookups of public addresses.
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
       </p>
     </div>
@@ -372,6 +431,13 @@
   let difficulty = null;
   let priceLive = false, diffLive = false;
 
+  // ── Wallet state (addresses live in localStorage only — never in code) ─
+  const WALLET_KEY = "btc-dashboard-wallet-addresses";
+  let walletAddresses = [];
+  let walletBtc = null;      // last known on-chain total received, in BTC
+  let walletLive = false;    // last wallet fetch succeeded
+  try { walletAddresses = JSON.parse(localStorage.getItem(WALLET_KEY)) || []; } catch (e) {}
+
   const $ = id => document.getElementById(id);
 
   const fmtUsd  = (v, digits = 0) =>
@@ -391,6 +457,12 @@
     return Math.max(0, (Date.now() - IN_SERVICE_DATE.getTime()) / 86400000);
   }
 
+  // Accrued income: actual on-chain total when a wallet is tracked,
+  // otherwise the run-rate estimate (daily USD yield × days elapsed).
+  function accruedUsd(price, dailyUsd) {
+    return walletBtc !== null ? walletBtc * price : dailyUsd * daysElapsed();
+  }
+
   // ── Render ────────────────────────────────────────────────────────────
   function render() {
     const price = btcPrice ?? FALLBACK_PRICE;
@@ -400,7 +472,8 @@
     const dailyUsd   = dailyBtc * price;
     const monthlyUsd = dailyUsd * DAYS_PER_MONTH;
     const days       = daysElapsed();
-    const accrued    = dailyUsd * days;
+    const estAccrued = dailyUsd * days;
+    const accrued    = accruedUsd(price, dailyUsd);
     const recovered  = TAX_SAVINGS + accrued;
     const remaining  = Math.max(0, GROSS_CAPITAL - recovered);
     const pct        = Math.min(100, recovered / GROSS_CAPITAL * 100);
@@ -422,12 +495,30 @@
     $("recoupBar").setAttribute("aria-label",
       "Recoupment: tax savings " + fmtUsd(TAX_SAVINGS) + ", accrued income " + fmtUsd(accrued) +
       ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(GROSS_CAPITAL));
+    $("legendAccruedLabel").textContent = walletBtc !== null ? "Mined (on-chain)" : "Mined to date (est.)";
     $("legendAccrued").textContent   = fmtUsd(accrued);
     $("legendRemaining").textContent = fmtUsd(remaining);
 
+    // On-chain KPI card
+    document.body.classList.toggle("has-wallet", walletAddresses.length > 0);
+    if (walletAddresses.length > 0) {
+      const n = walletAddresses.length + (walletAddresses.length === 1 ? " address" : " addresses");
+      if (walletBtc !== null) {
+        $("kpiMinedBtc").textContent = fmtBtc(walletBtc) + " BTC";
+        $("kpiMinedDetail").textContent = fmtUsd(walletBtc * price) + " · " + n +
+          (walletLive ? "" : " · offline, last known");
+      } else {
+        $("kpiMinedBtc").textContent = "—";
+        $("kpiMinedDetail").textContent = walletLive ? n : "Wallet data unavailable · " + n;
+      }
+    }
+
     // Details table
     $("tblDays").textContent      = Math.floor(days).toLocaleString("en-US");
-    $("tblAccrued").textContent   = fmtUsd(accrued);
+    $("tblAccrued").textContent   = fmtUsd(estAccrued);
+    $("rowActual").hidden         = walletBtc === null;
+    if (walletBtc !== null)
+      $("tblActual").textContent  = fmtBtc(walletBtc) + " BTC · " + fmtUsd(walletBtc * price);
     $("tblRecovered").textContent = fmtUsd(recovered);
     $("tblRemaining").textContent = fmtUsd(remaining);
 
@@ -458,7 +549,7 @@
     const simMonthly = simDaily * DAYS_PER_MONTH;
 
     const livePrice  = btcPrice ?? FALLBACK_PRICE;
-    const accrued    = dailyBtc * livePrice * daysElapsed();
+    const accrued    = accruedUsd(livePrice, dailyBtc * livePrice);
     const remaining  = Math.max(0, GROSS_CAPITAL - TAX_SAVINGS - accrued);
     const months     = remaining / simMonthly;
 
@@ -507,6 +598,90 @@
     return v;
   }
 
+  // ── Wallet: read-only on-chain totals ─────────────────────────────────
+  async function fetchWalletTotal(addrs) {
+    // Primary: one multiaddr call. Fallback: per-address via mempool.space.
+    try {
+      const res = await fetch("https://blockchain.info/multiaddr?active=" +
+        addrs.map(encodeURIComponent).join("|") + "&cors=true", { cache: "no-store" });
+      if (!res.ok) throw new Error("multiaddr " + res.status);
+      const data = await res.json();
+      if (!Array.isArray(data?.addresses)) throw new Error("multiaddr: bad payload");
+      return data.addresses.reduce((s, a) => s + (a.total_received || 0), 0) / 1e8;
+    } catch (e) {
+      const totals = await Promise.all(addrs.map(async a => {
+        const res = await fetch("https://mempool.space/api/address/" + encodeURIComponent(a),
+          { cache: "no-store" });
+        if (!res.ok) throw new Error("mempool.space " + res.status);
+        const d = await res.json();
+        return ((d?.chain_stats?.funded_txo_sum || 0) + (d?.mempool_stats?.funded_txo_sum || 0)) / 1e8;
+      }));
+      return totals.reduce((s, v) => s + v, 0);
+    }
+  }
+
+  async function refreshWallet() {
+    if (walletAddresses.length === 0) { walletBtc = null; walletLive = false; return; }
+    try {
+      walletBtc = await fetchWalletTotal(walletAddresses);
+      walletLive = true;
+    } catch (e) {
+      walletLive = false;      // keep last known walletBtc, flagged in the card
+    }
+  }
+
+  // ── Wallet: address management UI ─────────────────────────────────────
+  const ADDR_RE = /^([13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[02-9ac-hj-np-z]{11,87})$/;
+
+  function saveAddresses() {
+    try { localStorage.setItem(WALLET_KEY, JSON.stringify(walletAddresses)); } catch (e) {}
+  }
+
+  function renderAddrList() {
+    const list = $("addrList");
+    list.textContent = "";
+    walletAddresses.forEach(addr => {
+      const chip = document.createElement("span");
+      chip.className = "addr-chip";
+      const label = document.createElement("span");
+      label.textContent = addr.length > 22 ? addr.slice(0, 12) + "…" + addr.slice(-8) : addr;
+      label.title = addr;
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.textContent = "×";
+      rm.setAttribute("aria-label", "Stop tracking " + addr);
+      rm.addEventListener("click", async () => {
+        walletAddresses = walletAddresses.filter(a => a !== addr);
+        saveAddresses();
+        renderAddrList();
+        walletBtc = null; walletLive = false;
+        await refreshWallet();
+        render();
+      });
+      chip.append(label, rm);
+      list.append(chip);
+    });
+  }
+
+  async function addAddress() {
+    const input = $("addrInput"), err = $("addrError");
+    const addr = input.value.trim().replace(/^bitcoin:/i, "").split("?")[0];
+    const norm = addr.toLowerCase().startsWith("bc1") ? addr.toLowerCase() : addr;
+    err.textContent = "";
+    if (!norm) return;
+    if (!ADDR_RE.test(norm)) { err.textContent = "That doesn't look like a valid Bitcoin address."; return; }
+    if (walletAddresses.includes(norm)) { err.textContent = "Already tracking that address."; return; }
+    walletAddresses.push(norm);
+    saveAddresses();
+    input.value = "";
+    renderAddrList();
+    await refreshWallet();
+    render();
+  }
+
+  $("addrAdd").addEventListener("click", addAddress);
+  $("addrInput").addEventListener("keydown", e => { if (e.key === "Enter") addAddress(); });
+
   function setStatus() {
     const badge = $("statusBadge"), text = $("statusText");
     if (priceLive && diffLive) {
@@ -525,7 +700,7 @@
 
   async function refresh() {
     document.body.classList.add("refetching");
-    const [p, d] = await Promise.allSettled([fetchPrice(), fetchDifficulty()]);
+    const [p, d] = await Promise.allSettled([fetchPrice(), fetchDifficulty(), refreshWallet()]);
     if (p.status === "fulfilled") { btcPrice = p.value; priceLive = true; } else { priceLive = false; }
     if (d.status === "fulfilled") { difficulty = d.value; diffLive = true; } else { diffLive = false; }
     setStatus();
@@ -533,6 +708,7 @@
     document.body.classList.remove("refetching");
   }
 
+  renderAddrList();
   render();          // first paint with fallbacks — no blank flash
   refresh();
   setInterval(refresh, REFRESH_MS);
