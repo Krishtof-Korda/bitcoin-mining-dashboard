@@ -135,7 +135,9 @@
   .key .swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
   .key .swatch.tax       { background: var(--series-2); }
   .key .swatch.accrued   { background: var(--series-1); }
+  .key .swatch.onchain   { background: transparent; border: 2px solid var(--series-1); }
   .key .swatch.remaining { background: var(--track); border: 1px solid var(--baseline); }
+  .key[hidden] { display: none; }
   .key .k-label { color: var(--text-secondary); }
   .key .k-value { font-weight: 650; color: var(--text-primary); }
 
@@ -324,7 +326,8 @@
 
     <div class="legend">
       <div class="key"><span class="swatch tax"></span><span class="k-label">Tax savings</span><span class="k-value" id="legendTax">$60,564</span></div>
-      <div class="key"><span class="swatch accrued"></span><span class="k-label" id="legendAccruedLabel">Mined to date (est.)</span><span class="k-value" id="legendAccrued">—</span></div>
+      <div class="key"><span class="swatch accrued"></span><span class="k-label">Mined to date (est.)</span><span class="k-value" id="legendAccrued">—</span></div>
+      <div class="key" id="legendOnchain" hidden><span class="swatch onchain"></span><span class="k-label">On-chain received</span><span class="k-value" id="legendOnchainVal">—</span></div>
       <div class="key"><span class="swatch remaining"></span><span class="k-label">Remaining</span><span class="k-value" id="legendRemaining">—</span></div>
     </div>
   </section>
@@ -382,7 +385,7 @@
           <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
           <tr><th>Estimated income to date (current daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
           <tr id="rowActual" hidden><th>Actual mined on-chain (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
-          <tr><th>Total recovered (tax savings + mining income)</th><td class="num" id="tblRecovered">—</td></tr>
+          <tr><th>Total recovered (tax savings + estimated income)</th><td class="num" id="tblRecovered">—</td></tr>
           <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
         </tbody>
       </table>
@@ -413,8 +416,10 @@
       <div class="details-h">Wallet tracking (optional)</div>
       <p class="wallet-note">
         Paste the payout address(es) your pool sends rewards to. The dashboard then shows the
-        <strong>actual BTC received on-chain</strong> and uses it (instead of the estimate) for the
-        recoupment bar. Addresses are read-only — they can never spend funds — and are saved in
+        <strong>actual BTC received on-chain</strong> alongside the run-rate estimate — in the KPI
+        row, the recoupment legend, and the figures above. (Pool earnings sit off-chain until the
+        pool sends a payout, so this can lag the estimate.) Addresses are read-only — they can
+        never spend funds — and are saved in
         <strong>this browser only</strong> (localStorage). They are never uploaded or committed anywhere.
         Note: the total counts everything received by these addresses, not just mining payouts.
       </p>
@@ -511,11 +516,6 @@
     return Math.max(0, (Date.now() - inServiceDate().getTime()) / 86400000);
   }
 
-  // Accrued income: actual on-chain total when a wallet is tracked,
-  // otherwise the run-rate estimate (daily USD yield × days elapsed).
-  function accruedUsd(price, dailyUsd) {
-    return walletBtc !== null ? walletBtc * price : dailyUsd * daysElapsed();
-  }
 
   // ── Render ────────────────────────────────────────────────────────────
   function render() {
@@ -526,11 +526,12 @@
     const dailyUsd   = dailyBtc * price;
     const monthlyUsd = dailyUsd * DAYS_PER_MONTH;
     const days       = daysElapsed();
+    // The run-rate estimate drives the bar and break-even; the on-chain
+    // total (when a wallet is tracked) is displayed alongside it.
     const estAccrued = dailyUsd * days;
-    const accrued    = accruedUsd(price, dailyUsd);
     const tax        = taxSavings();
     const gross      = cfg.grossCapital;
-    const recovered  = tax + accrued;
+    const recovered  = tax + estAccrued;
     const remaining  = Math.max(0, gross - recovered);
     const pct        = Math.min(100, recovered / gross * 100);
 
@@ -560,13 +561,16 @@
       "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(gross);
     $("segTax").style.width     = Math.min(100, tax / gross * 100) + "%";
     $("segAccrued").style.width = Math.max(0, Math.min(100 - tax / gross * 100,
-                                           accrued / gross * 100)) + "%";
+                                           estAccrued / gross * 100)) + "%";
     $("recoupBar").setAttribute("aria-label",
-      "Recoupment: tax savings " + fmtUsd(tax) + ", accrued income " + fmtUsd(accrued) +
+      "Recoupment: tax savings " + fmtUsd(tax) + ", estimated income " + fmtUsd(estAccrued) +
       ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(gross));
-    $("legendAccruedLabel").textContent = walletBtc !== null ? "Mined (on-chain)" : "Mined to date (est.)";
-    $("legendAccrued").textContent   = fmtUsd(accrued);
+    $("legendAccrued").textContent   = fmtUsd(estAccrued);
     $("legendRemaining").textContent = fmtUsd(remaining);
+    const showOnchain = walletAddresses.length > 0 && walletBtc !== null;
+    $("legendOnchain").hidden = !showOnchain;
+    if (showOnchain)
+      $("legendOnchainVal").textContent = fmtBtc(walletBtc) + " BTC · " + fmtUsd(walletBtc * price);
 
     // On-chain KPI card
     document.body.classList.toggle("has-wallet", walletAddresses.length > 0);
@@ -574,7 +578,8 @@
       const n = walletAddresses.length + (walletAddresses.length === 1 ? " address" : " addresses");
       if (walletBtc !== null) {
         $("kpiMinedBtc").textContent = fmtBtc(walletBtc) + " BTC";
-        $("kpiMinedDetail").textContent = fmtUsd(walletBtc * price) + " · " + n +
+        $("kpiMinedDetail").textContent = fmtUsd(walletBtc * price) + " · vs " +
+          fmtUsd(estAccrued) + " est. · " + n +
           (walletLive ? "" : " · offline, last known");
       } else {
         $("kpiMinedBtc").textContent = "—";
@@ -624,7 +629,7 @@
     const simMonthly = simDaily * DAYS_PER_MONTH;
 
     const livePrice  = btcPrice ?? FALLBACK_PRICE;
-    const accrued    = accruedUsd(livePrice, dailyBtc * livePrice);
+    const accrued    = dailyBtc * livePrice * daysElapsed();
     const remaining  = Math.max(0, cfg.grossCapital - taxSavings() - accrued);
     const months     = remaining / simMonthly;
 
