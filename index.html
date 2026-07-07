@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitcoin Mining Contract Dashboard</title>
+<style>
+  :root {
+    --page:           #f9f9f7;
+    --surface-1:      #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6;  /* accrued mining income */
+    --series-2:       #1baf7a;  /* year-1 tax savings   */
+    --track:          #f0efec;  /* unfilled bar track    */
+    --good:           #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page:           #0d0d0d;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-2:       #199e70;
+      --track:          #262624;
+      --good:           #0ca30c;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 28px 20px 48px; }
+
+  header h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  header .sub { color: var(--text-secondary); margin-top: 4px; font-size: 14px; }
+  .statusline { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 13px; color: var(--text-muted); flex-wrap: wrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 2px 10px; font-size: 12px; color: var(--text-secondary);
+    background: var(--surface-1);
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+  .badge.live .dot { background: var(--good); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 22px; }
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card .label { font-size: 13px; color: var(--text-secondary); }
+  .card .value { font-size: 27px; font-weight: 600; margin-top: 6px; letter-spacing: -0.01em; }
+  .card .detail { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .refetching .card .value { opacity: 0.55; transition: opacity .2s; }
+
+  section.panel {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-top: 18px;
+  }
+  section.panel h2 { font-size: 15px; font-weight: 650; margin: 0; }
+  section.panel .panel-sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
+
+  .hero-row { display: flex; align-items: baseline; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+  .hero { font-size: 52px; font-weight: 650; letter-spacing: -0.02em; line-height: 1; }
+  .hero-caption { font-size: 14px; color: var(--text-secondary); }
+
+  .bar-wrap { margin-top: 18px; }
+  .bar {
+    display: flex; height: 20px; border-radius: 4px; overflow: hidden;
+    background: var(--track);
+    border: 1px solid var(--border);
+  }
+  .seg { height: 100%; min-width: 0; transition: width .4s ease; }
+  .seg.tax     { background: var(--series-2); }
+  .seg.accrued { background: var(--series-1); }
+  .seg.gap     { background: var(--surface-1); flex: 0 0 2px; }
+  .bar-scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+  .legend { display: flex; gap: 22px; margin-top: 14px; flex-wrap: wrap; }
+  .key { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+  .key .swatch { width: 12px; height: 12px; border-radius: 3px; margin-top: 3px; flex: 0 0 auto; }
+  .key .swatch.tax     { background: var(--series-2); }
+  .key .swatch.accrued { background: var(--series-1); }
+  .key .swatch.remaining { background: var(--track); border: 1px solid var(--baseline); }
+  .key .k-label { color: var(--text-secondary); }
+  .key .k-value { font-weight: 600; color: var(--text-primary); }
+
+  .sim-grid { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 24px; margin-top: 16px; align-items: start; }
+  @media (max-width: 640px) { .sim-grid { grid-template-columns: 1fr; } }
+  .sim-input label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+  .price-field { display: flex; align-items: center; border: 1px solid var(--baseline); border-radius: 8px; background: var(--page); overflow: hidden; }
+  .price-field:focus-within { border-color: var(--series-1); }
+  .price-field .prefix { padding: 0 4px 0 12px; color: var(--text-muted); font-size: 16px; }
+  .price-field input {
+    flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+    color: var(--text-primary); font: inherit; font-size: 18px; font-weight: 600;
+    padding: 10px 12px 10px 2px;
+  }
+  .sim-presets { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .sim-presets button {
+    font: inherit; font-size: 12px; color: var(--text-secondary);
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 10px; cursor: pointer;
+  }
+  .sim-presets button:hover { border-color: var(--baseline); color: var(--text-primary); }
+  .sim-out { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+  .sim-stat .label { font-size: 13px; color: var(--text-secondary); }
+  .sim-stat .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .sim-stat .detail { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+
+  table.detail-table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 13.5px; }
+  table.detail-table th, table.detail-table td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--gridline); }
+  table.detail-table th { color: var(--text-secondary); font-weight: 500; }
+  table.detail-table td.num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 0; }
+
+  footer { margin-top: 26px; font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
+  footer a { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Bitcoin Mining Contract Dashboard</h1>
+    <div class="sub">11 × Canaan Avalon A15 Pro · 2,365 TH/s fleet · in service June 25, 2025 · 48-month prepaid-power contract</div>
+    <div class="statusline">
+      <span class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Connecting…</span></span>
+      <span id="lastUpdated"></span>
+      <span id="daysElapsed"></span>
+    </div>
+  </header>
+
+  <!-- KPI row -->
+  <div class="cards" id="kpiRow">
+    <div class="card">
+      <div class="label">BTC price</div>
+      <div class="value" id="kpiPrice">—</div>
+      <div class="detail" id="kpiPriceSource">CoinGecko · USD spot</div>
+    </div>
+    <div class="card">
+      <div class="label">Network difficulty</div>
+      <div class="value" id="kpiDifficulty">—</div>
+      <div class="detail" id="kpiDiffSource">Blockchain.info · live</div>
+    </div>
+    <div class="card">
+      <div class="label">Estimated daily income</div>
+      <div class="value" id="kpiDailyUsd">—</div>
+      <div class="detail" id="kpiDailyBtc">— BTC/day · net of 2% pool fee</div>
+    </div>
+    <div class="card">
+      <div class="label">Estimated monthly income</div>
+      <div class="value" id="kpiMonthlyUsd">—</div>
+      <div class="detail">Live run-rate × 30.44 days</div>
+    </div>
+  </div>
+
+  <!-- Recoupment progress -->
+  <section class="panel">
+    <h2>Capital recoupment</h2>
+    <div class="panel-sub">Progress against the full $206,000 gross capital — the fixed Year-1 tax savings block plus mining income accrued since the in-service date.</div>
+
+    <div class="hero-row">
+      <div class="hero" id="heroPct">—</div>
+      <div class="hero-caption" id="heroCaption">of gross capital recovered</div>
+    </div>
+
+    <div class="bar-wrap">
+      <div class="bar" role="img" id="recoupBar" aria-label="Recoupment progress bar">
+        <div class="seg tax" id="segTax"></div>
+        <div class="seg gap"></div>
+        <div class="seg accrued" id="segAccrued"></div>
+      </div>
+      <div class="bar-scale"><span>$0</span><span>$206,000</span></div>
+    </div>
+
+    <div class="legend">
+      <div class="key">
+        <span class="swatch tax"></span>
+        <span><span class="k-label">Year-1 tax savings (fixed)</span><br><span class="k-value">$60,564</span></span>
+      </div>
+      <div class="key">
+        <span class="swatch accrued"></span>
+        <span><span class="k-label">Accrued mining income to date</span><br><span class="k-value" id="legendAccrued">—</span></span>
+      </div>
+      <div class="key">
+        <span class="swatch remaining"></span>
+        <span><span class="k-label">Remaining to full recoupment</span><br><span class="k-value" id="legendRemaining">—</span></span>
+      </div>
+    </div>
+
+    <table class="detail-table" aria-label="Contract and recoupment figures">
+      <tbody>
+        <tr><th>Gross capital invested</th><td class="num">$206,000</td></tr>
+        <tr><th>Prepaid power bucket (48 months, no monthly bills)</th><td class="num">$85,000</td></tr>
+        <tr><th>Year-1 tax savings (70% depreciation × 42% bracket)</th><td class="num">$60,564</td></tr>
+        <tr><th>True net capital invested</th><td class="num">$145,436</td></tr>
+        <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
+        <tr><th>Accrued income to date (current daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
+        <tr><th>Total recovered (tax savings + accrued income)</th><td class="num" id="tblRecovered">—</td></tr>
+        <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Bull market simulator -->
+  <section class="panel">
+    <h2>Bull market simulator</h2>
+    <div class="panel-sub">Type a hypothetical BTC price — projections re-calculate instantly at today's live network difficulty.</div>
+
+    <div class="sim-grid">
+      <div class="sim-input">
+        <label for="simPrice">Hypothetical BTC price (USD)</label>
+        <div class="price-field">
+          <span class="prefix">$</span>
+          <input id="simPrice" type="text" inputmode="numeric" autocomplete="off" value="100,000">
+        </div>
+        <div class="sim-presets">
+          <button type="button" data-price="100000">$100K</button>
+          <button type="button" data-price="150000">$150K</button>
+          <button type="button" data-price="250000">$250K</button>
+          <button type="button" data-price="500000">$500K</button>
+        </div>
+      </div>
+      <div class="sim-out">
+        <div class="sim-stat">
+          <div class="label">Projected monthly income</div>
+          <div class="value" id="simMonthly">—</div>
+          <div class="detail" id="simDaily">—</div>
+        </div>
+        <div class="sim-stat">
+          <div class="label">Months to full gross-capital break-even</div>
+          <div class="value" id="simMonths">—</div>
+          <div class="detail" id="simMonthsDetail">—</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Live data: <a href="https://www.coingecko.com" rel="noopener">CoinGecko</a> (BTC/USD) and
+    <a href="https://blockchain.info" rel="noopener">Blockchain.info</a> (network difficulty), refreshed every 60&nbsp;seconds.
+    Yield model: 2,365&nbsp;TH/s × 86,400&nbsp;s × 3.125&nbsp;BTC block reward ÷ (difficulty × 2³²), net of a 2% pool fee.
+    Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ── Contract constants ────────────────────────────────────────────────
+  const GROSS_CAPITAL    = 206000;
+  const TAX_SAVINGS      = 60564;          // 70% depreciation × 42% bracket, Year 1
+  const TOTAL_HASHRATE_TH = 2365;          // 11 × 215 TH/s Avalon A15 Pro
+  const POOL_FEE_FACTOR  = 0.98;           // 2% pool fee retention
+  const BLOCK_REWARD     = 3.125;
+  const IN_SERVICE_DATE  = new Date(2025, 5, 25); // June 25, 2025 (local)
+  const DAYS_PER_MONTH   = 365.25 / 12;    // 30.4375
+  const REFRESH_MS       = 60000;
+
+  // Fallbacks if an API is unreachable (clearly flagged in the status badge).
+  const FALLBACK_PRICE      = 95000;
+  const FALLBACK_DIFFICULTY = 121.5e12;
+
+  // ── Live state ────────────────────────────────────────────────────────
+  let btcPrice   = null;
+  let difficulty = null;
+  let priceLive = false, diffLive = false;
+
+  const $ = id => document.getElementById(id);
+
+  const fmtUsd  = (v, digits = 0) =>
+    v.toLocaleString("en-US", { style: "currency", currency: "USD",
+      minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const fmtBtc  = v => v.toFixed(6);
+
+  // ── Core mining math (per contract brief) ─────────────────────────────
+  function netDailyBtc(liveDifficulty) {
+    const difficultyHashFactor = liveDifficulty * Math.pow(2, 32);
+    const dailyHashes = TOTAL_HASHRATE_TH * Math.pow(10, 12) * 86400;
+    const grossDailyBtc = (dailyHashes * BLOCK_REWARD) / difficultyHashFactor;
+    return grossDailyBtc * POOL_FEE_FACTOR;
+  }
+
+  function daysElapsed() {
+    return Math.max(0, (Date.now() - IN_SERVICE_DATE.getTime()) / 86400000);
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────
+  function render() {
+    const price = btcPrice ?? FALLBACK_PRICE;
+    const diff  = difficulty ?? FALLBACK_DIFFICULTY;
+
+    const dailyBtc   = netDailyBtc(diff);
+    const dailyUsd   = dailyBtc * price;
+    const monthlyUsd = dailyUsd * DAYS_PER_MONTH;
+    const days       = daysElapsed();
+    const accrued    = dailyUsd * days;
+    const recovered  = TAX_SAVINGS + accrued;
+    const remaining  = Math.max(0, GROSS_CAPITAL - recovered);
+    const pct        = Math.min(100, recovered / GROSS_CAPITAL * 100);
+
+    // KPI cards
+    $("kpiPrice").textContent      = fmtUsd(price);
+    $("kpiDifficulty").textContent = (diff / 1e12).toFixed(2) + " T";
+    $("kpiDailyUsd").textContent   = fmtUsd(dailyUsd, 2);
+    $("kpiDailyBtc").textContent   = fmtBtc(dailyBtc) + " BTC/day · net of 2% pool fee";
+    $("kpiMonthlyUsd").textContent = fmtUsd(monthlyUsd);
+
+    // Recoupment hero + dual-color bar
+    $("heroPct").textContent = pct.toFixed(1) + "%";
+    $("heroCaption").textContent =
+      "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(GROSS_CAPITAL);
+    $("segTax").style.width     = (TAX_SAVINGS / GROSS_CAPITAL * 100) + "%";
+    $("segAccrued").style.width = Math.min(100 - TAX_SAVINGS / GROSS_CAPITAL * 100,
+                                           accrued / GROSS_CAPITAL * 100) + "%";
+    $("recoupBar").setAttribute("aria-label",
+      "Recoupment: tax savings " + fmtUsd(TAX_SAVINGS) + ", accrued income " + fmtUsd(accrued) +
+      ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(GROSS_CAPITAL));
+    $("legendAccrued").textContent   = fmtUsd(accrued);
+    $("legendRemaining").textContent = fmtUsd(remaining);
+
+    // Table view
+    $("tblDays").textContent      = Math.floor(days).toLocaleString("en-US");
+    $("tblAccrued").textContent   = fmtUsd(accrued);
+    $("tblRecovered").textContent = fmtUsd(recovered);
+    $("tblRemaining").textContent = fmtUsd(remaining);
+
+    // Status line
+    $("daysElapsed").textContent = "Day " + Math.floor(days) + " of contract";
+    renderSimulator();
+  }
+
+  // ── Bull market simulator ─────────────────────────────────────────────
+  function parseSimPrice() {
+    const raw = $("simPrice").value.replace(/[^0-9.]/g, "");
+    const v = parseFloat(raw);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  function renderSimulator() {
+    const simPrice = parseSimPrice();
+    if (simPrice === null) {
+      $("simMonthly").textContent = "—";
+      $("simDaily").textContent = "Enter a price to project";
+      $("simMonths").textContent = "—";
+      $("simMonthsDetail").textContent = "";
+      return;
+    }
+    const diff       = difficulty ?? FALLBACK_DIFFICULTY;
+    const dailyBtc   = netDailyBtc(diff);
+    const simDaily   = dailyBtc * simPrice;
+    const simMonthly = simDaily * DAYS_PER_MONTH;
+
+    const livePrice  = btcPrice ?? FALLBACK_PRICE;
+    const accrued    = dailyBtc * livePrice * daysElapsed();
+    const remaining  = Math.max(0, GROSS_CAPITAL - TAX_SAVINGS - accrued);
+    const months     = remaining / simMonthly;
+
+    $("simMonthly").textContent = fmtUsd(simMonthly);
+    $("simDaily").textContent   = fmtUsd(simDaily, 2) + "/day at " + fmtUsd(simPrice) + " per BTC";
+    if (remaining === 0) {
+      $("simMonths").textContent = "Broke even";
+      $("simMonthsDetail").textContent = "Gross capital already fully recovered";
+    } else {
+      $("simMonths").textContent = months.toFixed(1) + " mo";
+      $("simMonthsDetail").textContent =
+        fmtUsd(remaining) + " still to recover after tax savings + income to date";
+    }
+  }
+
+  $("simPrice").addEventListener("input", renderSimulator);
+  document.querySelectorAll(".sim-presets button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $("simPrice").value = Number(btn.dataset.price).toLocaleString("en-US");
+      renderSimulator();
+    });
+  });
+  $("simPrice").addEventListener("blur", () => {
+    const v = parseSimPrice();
+    if (v !== null) $("simPrice").value = v.toLocaleString("en-US");
+  });
+
+  // ── Live data fetch ───────────────────────────────────────────────────
+  async function fetchPrice() {
+    const res = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
+      { cache: "no-store" });
+    if (!res.ok) throw new Error("CoinGecko " + res.status);
+    const data = await res.json();
+    const v = data?.bitcoin?.usd;
+    if (typeof v !== "number") throw new Error("CoinGecko: bad payload");
+    return v;
+  }
+
+  async function fetchDifficulty() {
+    const res = await fetch("https://blockchain.info/q/getdifficulty?cors=true",
+      { cache: "no-store" });
+    if (!res.ok) throw new Error("Blockchain.info " + res.status);
+    const v = parseFloat(await res.text());
+    if (!Number.isFinite(v) || v <= 0) throw new Error("Blockchain.info: bad payload");
+    return v;
+  }
+
+  function setStatus() {
+    const badge = $("statusBadge"), text = $("statusText");
+    if (priceLive && diffLive) {
+      badge.classList.add("live");
+      text.textContent = "Live data";
+    } else {
+      badge.classList.remove("live");
+      const stale = [!priceLive && "price", !diffLive && "difficulty"].filter(Boolean).join(" & ");
+      text.textContent = "Estimated — " + stale + " offline, using fallback";
+    }
+    $("kpiPriceSource").textContent = priceLive ? "CoinGecko · USD spot" : "Fallback estimate · CoinGecko offline";
+    $("kpiDiffSource").textContent  = diffLive ? "Blockchain.info · live" : "Fallback estimate · Blockchain.info offline";
+    $("lastUpdated").textContent =
+      "Updated " + new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+
+  async function refresh() {
+    document.body.classList.add("refetching");
+    const [p, d] = await Promise.allSettled([fetchPrice(), fetchDifficulty()]);
+    if (p.status === "fulfilled") { btcPrice = p.value; priceLive = true; } else { priceLive = false; }
+    if (d.status === "fulfilled") { difficulty = d.value; diffLive = true; } else { diffLive = false; }
+    setStatus();
+    render();
+    document.body.classList.remove("refetching");
+  }
+
+  render();          // first paint with fallbacks — no blank flash
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
