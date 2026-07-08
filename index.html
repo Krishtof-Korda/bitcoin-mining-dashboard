@@ -528,6 +528,7 @@
     const days       = daysElapsed();
     // The run-rate estimate drives the bar and break-even; the on-chain
     // total (when a wallet is tracked) is displayed alongside it.
+    const estBtc     = dailyBtc * days;
     const estAccrued = dailyUsd * days;
     const tax        = taxSavings();
     const gross      = cfg.grossCapital;
@@ -565,7 +566,7 @@
     $("recoupBar").setAttribute("aria-label",
       "Recoupment: tax savings " + fmtUsd(tax) + ", estimated income " + fmtUsd(estAccrued) +
       ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(gross));
-    $("legendAccrued").textContent   = fmtUsd(estAccrued);
+    $("legendAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued);
     $("legendRemaining").textContent = fmtUsd(remaining);
     const showOnchain = walletAddresses.length > 0 && walletBtc !== null;
     $("legendOnchain").hidden = !showOnchain;
@@ -592,7 +593,7 @@
     $("tblTaxSavings").textContent = fmtUsd(tax);
     $("tblNetCapital").textContent = fmtUsd(gross - tax);
     $("tblDays").textContent      = Math.floor(days).toLocaleString("en-US");
-    $("tblAccrued").textContent   = fmtUsd(estAccrued);
+    $("tblAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued);
     $("rowActual").hidden         = walletBtc === null;
     if (walletBtc !== null)
       $("tblActual").textContent  = fmtBtc(walletBtc) + " BTC · " + fmtUsd(walletBtc * price);
