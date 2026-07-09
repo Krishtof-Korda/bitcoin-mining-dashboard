@@ -141,6 +141,34 @@
   .key .k-label { color: var(--text-secondary); }
   .key .k-value { font-weight: 650; color: var(--text-primary); }
 
+  /* ── Price history chart ────────────────────────────────── */
+  .chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .range-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .range-pills button {
+    font: inherit; font-size: 12.5px; font-weight: 550; color: var(--text-secondary);
+    background: var(--chip); border: 1px solid transparent; border-radius: 999px;
+    padding: 4px 12px; cursor: pointer; transition: border-color .15s, color .15s, background .15s;
+  }
+  .range-pills button:hover { border-color: var(--accent); color: var(--text-primary); }
+  .range-pills button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chart-wrap { position: relative; margin-top: 14px; }
+  #priceChart { display: block; width: 100%; }
+  .chart-tip {
+    position: absolute; pointer-events: none; z-index: 2;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 6px 10px; font-size: 12.5px; white-space: nowrap;
+    transform: translate(-50%, 0);
+  }
+  .chart-tip .tip-price { font-weight: 650; }
+  .chart-tip .tip-date { color: var(--text-muted); }
+  .chart-msg {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 13px; color: var(--text-muted);
+  }
+  .chart-msg[hidden] { display: none; }
+  .chart-up { color: var(--good); font-weight: 600; }
+  .chart-down { color: var(--critical); font-weight: 600; }
+
   /* ── Simulator ──────────────────────────────────────────── */
   .sim-grid { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 28px; margin-top: 18px; align-items: start; }
   @media (max-width: 640px) { .sim-grid { grid-template-columns: 1fr; } }
@@ -279,6 +307,29 @@
       <span id="daysElapsed"></span>
     </div>
   </header>
+
+  <!-- BTC price history -->
+  <section class="panel">
+    <div class="chart-head">
+      <div>
+        <h2>Bitcoin price</h2>
+        <div class="panel-sub" id="chartSub">Loading price history…</div>
+      </div>
+      <div class="range-pills" role="group" aria-label="Chart time range">
+        <button type="button" data-range="1d">1D</button>
+        <button type="button" data-range="1w">1W</button>
+        <button type="button" data-range="1m">1M</button>
+        <button type="button" data-range="1y">1Y</button>
+        <button type="button" data-range="4y">4Y</button>
+        <button type="button" data-range="start" class="active">Since start</button>
+      </div>
+    </div>
+    <div class="chart-wrap" id="chartWrap">
+      <svg id="priceChart" height="220" role="img" aria-label="Bitcoin price history"></svg>
+      <div class="chart-tip" id="chartTip" hidden></div>
+      <div class="chart-msg" id="chartMsg">Loading…</div>
+    </div>
+  </section>
 
   <!-- KPI row -->
   <div class="cards" id="kpiRow">
@@ -437,6 +488,8 @@
         <a href="https://blockchain.info" rel="noopener">Blockchain.info</a> (network difficulty), refreshed every 60&nbsp;seconds.
         Daily yield = fleet hashrate × 86,400&nbsp;s × block reward ÷ (difficulty × 2³²), net of the pool fee,
         using the contract parameters set above.
+        Price history: CoinGecko market chart (ranges up to 1 year) and Blockchain.info charts
+        (longer ranges), refreshed at most every 5 minutes per range.
         On-chain wallet totals (when tracking is enabled) come from Blockchain.info with
         <a href="https://mempool.space" rel="noopener">mempool.space</a> as fallback — read-only lookups of public addresses.
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
@@ -809,6 +862,190 @@
     render();
   });
 
+  // ── Price history chart ───────────────────────────────────────────────
+  const CHART_TTL = 5 * 60 * 1000;   // refetch a range at most every 5 min
+  let chartRange = "start";
+  const chartCache = {};             // range → { points, at }
+  let chartPoints = [];              // currently displayed [{t, p}]
+  let chartPx = [];                  // pixel-space points for hover lookup
+
+  function rangeDays(r) {
+    if (r === "start") return Math.max(1, Math.ceil(daysElapsed()) + 1);
+    return { "1d": 1, "1w": 7, "1m": 30, "1y": 365, "4y": 1461 }[r];
+  }
+
+  async function fetchHistory(range) {
+    const days = rangeDays(range);
+    if (days <= 365) {
+      // CoinGecko keyless: 5-min points for 1 day, hourly to 90, daily beyond
+      const res = await fetch(
+        "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=" + days,
+        { cache: "no-store" });
+      if (!res.ok) throw new Error("CoinGecko " + res.status);
+      const data = await res.json();
+      if (!Array.isArray(data?.prices) || data.prices.length < 2) throw new Error("CoinGecko: bad payload");
+      return data.prices.map(([t, p]) => ({ t, p }));
+    }
+    // Longer ranges: Blockchain.info charts (daily, no 365-day cap)
+    const res = await fetch(
+      "https://api.blockchain.info/charts/market-price?timespan=" + days + "days&format=json&cors=true",
+      { cache: "no-store" });
+    if (!res.ok) throw new Error("Blockchain.info charts " + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data?.values) || data.values.length < 2) throw new Error("charts: bad payload");
+    return data.values.map(v => ({ t: v.x * 1000, p: v.y }));
+  }
+
+  async function loadChart() {
+    const cached = chartCache[chartRange];
+    if (cached && Date.now() - cached.at < CHART_TTL) {
+      chartPoints = cached.points;
+      drawChart();
+      return;
+    }
+    try {
+      let pts = await fetchHistory(chartRange);
+      if (chartRange === "start") {
+        const t0 = inServiceDate().getTime();
+        const cut = pts.filter(pt => pt.t >= t0);
+        if (cut.length >= 2) pts = cut;
+      }
+      chartCache[chartRange] = { points: pts, at: Date.now() };
+      chartPoints = pts;
+      $("chartMsg").hidden = true;
+      drawChart();
+    } catch (e) {
+      if (chartPoints.length === 0) {
+        $("chartMsg").hidden = false;
+        $("chartMsg").textContent = "Price history unavailable — will retry on the next refresh.";
+        $("chartSub").textContent = "—";
+      }
+    }
+  }
+
+  function fmtTick(t, spanMs) {
+    const d = new Date(t);
+    if (spanMs <= 2 * 86400000)
+      return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    if (spanMs <= 200 * 86400000)
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return d.toLocaleDateString("en-US", { month: "short" }) + " ’" + String(d.getFullYear()).slice(2);
+  }
+
+  const fmtDateFull = t =>
+    new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+  function niceStep(raw) {
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    for (const m of [1, 2, 5, 10]) if (m * mag >= raw) return m * mag;
+    return 10 * mag;
+  }
+
+  function drawChart() {
+    const svg = $("priceChart"), wrap = $("chartWrap");
+    if (chartPoints.length < 2) return;
+    const w = wrap.clientWidth || 800, h = 220;
+    const padL = 8, padR = 76, padT = 14, padB = 24, labW = 52;
+    const plotL = padL + labW, plotR = w - padR, plotT = padT, plotB = h - padB;
+    svg.setAttribute("width", w);
+    svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+
+    const t0 = chartPoints[0].t, t1 = chartPoints[chartPoints.length - 1].t;
+    let pMin = Infinity, pMax = -Infinity;
+    for (const pt of chartPoints) { if (pt.p < pMin) pMin = pt.p; if (pt.p > pMax) pMax = pt.p; }
+    const padP = (pMax - pMin) * 0.06 || pMax * 0.01;
+    const yMin = pMin - padP, yMax = pMax + padP;
+
+    const X = t => plotL + (t - t0) / (t1 - t0) * (plotR - plotL);
+    const Y = p => plotB - (p - yMin) / (yMax - yMin) * (plotB - plotT);
+
+    // y gridlines on clean numbers
+    const step = niceStep((yMax - yMin) / 3.5);
+    let grid = "";
+    for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) {
+      const y = Y(v);
+      grid += '<line x1="' + plotL + '" x2="' + plotR + '" y1="' + y + '" y2="' + y +
+        '" stroke="var(--gridline)" stroke-width="1"/>' +
+        '<text x="' + (plotL - 8) + '" y="' + (y + 3.5) + '" text-anchor="end" font-size="11" fill="var(--text-muted)" style="font-variant-numeric:tabular-nums">' +
+        "$" + v.toLocaleString("en-US") + "</text>";
+    }
+
+    // x labels: start / middle / end
+    const spanMs = t1 - t0;
+    let xlab = "";
+    [[t0, "start"], [(t0 + t1) / 2, "middle"], [t1, "end"]].forEach(([t, anchor]) => {
+      xlab += '<text x="' + X(t) + '" y="' + (h - 6) + '" text-anchor="' + anchor +
+        '" font-size="11" fill="var(--text-muted)">' + fmtTick(t, spanMs) + "</text>";
+    });
+
+    // line + area wash
+    chartPx = chartPoints.map(pt => ({ x: X(pt.t), y: Y(pt.p), t: pt.t, p: pt.p }));
+    const line = chartPx.map((pt, i) => (i ? "L" : "M") + pt.x.toFixed(1) + " " + pt.y.toFixed(1)).join("");
+    const area = line + "L" + plotR + " " + plotB + "L" + plotL + " " + plotB + "Z";
+    const last = chartPx[chartPx.length - 1];
+
+    svg.innerHTML =
+      grid + xlab +
+      '<path d="' + area + '" fill="var(--series-1)" opacity="0.1"/>' +
+      '<path d="' + line + '" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<line id="chCross" y1="' + plotT + '" y2="' + plotB + '" stroke="var(--baseline)" stroke-width="1" visibility="hidden"/>' +
+      '<circle id="chDot" r="4.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" visibility="hidden"/>' +
+      '<circle cx="' + last.x + '" cy="' + last.y + '" r="4.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"/>' +
+      '<text x="' + (last.x + 9) + '" y="' + (last.y + 4) + '" font-size="12" font-weight="600" fill="var(--text-primary)">' +
+      fmtUsd(last.p) + "</text>";
+
+    // subtitle: range + change
+    const first = chartPoints[0], lastPt = chartPoints[chartPoints.length - 1];
+    const chg = (lastPt.p - first.p) / first.p * 100;
+    const cls = chg >= 0 ? "chart-up" : "chart-down";
+    const sign = chg >= 0 ? "+" : "";
+    $("chartSub").innerHTML = fmtDateFull(first.t) + " – " + fmtDateFull(lastPt.t) +
+      ' · <span class="' + cls + '">' + sign + chg.toFixed(1) + "%</span>";
+    svg.setAttribute("aria-label", "Bitcoin price from " + new Date(first.t).toDateString() +
+      " to " + new Date(lastPt.t).toDateString() + ", " + fmtUsd(first.p) + " to " + fmtUsd(lastPt.p) +
+      " (" + sign + chg.toFixed(1) + "%), low " + fmtUsd(pMin) + ", high " + fmtUsd(pMax));
+  }
+
+  // hover crosshair + tooltip (nearest point on the x axis)
+  $("chartWrap").addEventListener("pointermove", e => {
+    if (chartPx.length === 0) return;
+    const rect = $("priceChart").getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    let lo = 0, hi = chartPx.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; (chartPx[mid].x < mx) ? lo = mid : hi = mid; }
+    const pt = (mx - chartPx[lo].x < chartPx[hi].x - mx) ? chartPx[lo] : chartPx[hi];
+    const cross = document.getElementById("chCross"), dot = document.getElementById("chDot");
+    if (!cross || !dot) return;
+    cross.setAttribute("x1", pt.x); cross.setAttribute("x2", pt.x); cross.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); dot.setAttribute("visibility", "visible");
+    const tip = $("chartTip");
+    const spanMs = chartPoints[chartPoints.length - 1].t - chartPoints[0].t;
+    const d = new Date(pt.t);
+    const when = spanMs <= 8 * 86400000
+      ? d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    tip.innerHTML = '<span class="tip-price">' + fmtUsd(pt.p) + '</span> <span class="tip-date">' + when + "</span>";
+    tip.hidden = false;
+    tip.style.left = Math.max(60, Math.min(pt.x, $("chartWrap").clientWidth - 60)) + "px";
+    tip.style.top = Math.max(0, pt.y - 40) + "px";
+  });
+  $("chartWrap").addEventListener("pointerleave", () => {
+    $("chartTip").hidden = true;
+    const cross = document.getElementById("chCross"), dot = document.getElementById("chDot");
+    if (cross) cross.setAttribute("visibility", "hidden");
+    if (dot) dot.setAttribute("visibility", "hidden");
+  });
+
+  document.querySelectorAll(".range-pills button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".range-pills button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      chartRange = btn.dataset.range;
+      loadChart();
+    });
+  });
+  new ResizeObserver(() => { if (chartPoints.length) drawChart(); }).observe($("chartWrap"));
+
   function setStatus() {
     const badge = $("statusBadge"), text = $("statusText");
     if (priceLive && diffLive) {
@@ -832,6 +1069,7 @@
     if (d.status === "fulfilled") { difficulty = d.value; diffLive = true; } else { diffLive = false; }
     setStatus();
     render();
+    loadChart();
     document.body.classList.remove("refetching");
   }
 
