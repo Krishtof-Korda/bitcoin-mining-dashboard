@@ -404,7 +404,7 @@
 
     <div class="legend">
       <div class="key"><span class="swatch tax"></span><span class="k-label">Tax savings</span><span class="k-value" id="legendTax">$60,564</span></div>
-      <div class="key"><span class="swatch accrued"></span><span class="k-label">Mined to date (after tax)</span><span class="k-value" id="legendAccrued">—</span></div>
+      <div class="key"><span class="swatch accrued"></span><span class="k-label">Mined to date (est.)</span><span class="k-value" id="legendAccrued">—</span></div>
       <div class="key" id="legendOnchain" hidden><span class="swatch onchain"></span><span class="k-label">On-chain received</span><span class="k-value" id="legendOnchainVal">—</span></div>
       <div class="key"><span class="swatch remaining"></span><span class="k-label">Remaining</span><span class="k-value" id="legendRemaining">—</span></div>
     </div>
@@ -478,9 +478,9 @@
           <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
           <tr><th>Estimated income to date, pre-tax (daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
           <tr><th id="tblMiningTaxLabel">Ordinary income tax on mined BTC</th><td class="num tax-owed" id="tblMiningTax">—</td></tr>
-          <tr><th>After-tax mining income to date</th><td class="num" id="tblAfterTax">—</td></tr>
+          <tr><th>Mining income after tax (conservative reference)</th><td class="num" id="tblAfterTax">—</td></tr>
           <tr id="rowActual" hidden><th>Actual mined on-chain, pre-tax (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
-          <tr><th>Total recovered (tax savings + after-tax income)</th><td class="num" id="tblRecovered">—</td></tr>
+          <tr><th>Total recovered (tax savings + mining income)</th><td class="num" id="tblRecovered">—</td></tr>
           <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
         </tbody>
       </table>
@@ -491,14 +491,14 @@
 
       <div class="details-h">After-tax &amp; multi-year tax model</div>
       <p class="wallet-note">
-        Mined BTC is <strong>ordinary income at its value when mined</strong>, so the recoupment bar
-        above now counts mining income after tax. Depreciation and energy deductions are a separate
-        benefit (they offset your other income at your bracket) — but they shrink after year 1 while
-        the mining income keeps being taxed, so the net benefit declines over the contract. This
-        ledger projects all 48 months <strong>at today's price and difficulty</strong> — a steady-state
-        baseline; it does not yet model price growth, difficulty drift, or the 2028 halving. Enter your
-        years 2–4 deductions (continuing depreciation + energy amortization) from your K-1; year 1 is the
-        depreciation figure above. Assumes deductions offset other income. Not tax advice.
+        Mined BTC is ordinary income when mined — but <strong>depreciation and energy deductions can
+        shelter it</strong>, so recoupment counts mining income pre-tax, with the after-tax figure shown
+        alongside as a conservative reference. This ledger projects all 48 months
+        <strong>at today's price and difficulty</strong> — a steady-state baseline; it does not yet model
+        price growth, difficulty drift, or the 2028 halving. Enter your years 2–4 deductions (continuing
+        depreciation + energy amortization) from your K-1; year 1 is the depreciation figure above. The
+        "Mining tax" column is the exposure <em>if</em> that income were fully taxed and unsheltered.
+        Assumes deductions offset other income. Not tax advice.
       </p>
       <table class="detail-table" aria-label="Mining income tax rate">
         <tbody>
@@ -513,7 +513,7 @@
               <th>Deductions</th>
               <th>Tax benefit</th>
               <th>Mining income</th>
-              <th>Mining tax</th>
+              <th>Mining tax (if unsheltered)</th>
               <th>After-tax mining</th>
             </tr>
           </thead>
@@ -583,8 +583,8 @@
         (longer ranges), refreshed at most every 5 minutes per range.
         On-chain wallet totals (when tracking is enabled) come from Blockchain.info with
         <a href="https://mempool.space" rel="noopener">mempool.space</a> as fallback — read-only lookups of public addresses.
-        Recoupment counts mined BTC after ordinary income tax; depreciation and energy deductions are a
-        separate benefit that offsets other income (see the tax model above).
+        Recoupment counts mined BTC pre-tax, with the after-tax figure shown as a conservative reference;
+        depreciation and energy deductions can shelter the mining income (see the tax model above).
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
       </p>
     </div>
@@ -680,13 +680,14 @@
     // total (when a wallet is tracked) is displayed alongside it.
     const estBtc     = dailyBtc * days;
     const estAccrued = dailyUsd * days;
-    // Mined BTC is ordinary income at its value when mined, so the amount
-    // that actually recoups capital is the after-tax figure.
+    // Mined BTC is ordinary income when mined, but depreciation and energy
+    // deductions can shelter it — so recoupment counts mining income pre-tax,
+    // and the after-tax figure rides along as a conservative reference.
     const miningKeep = 1 - cfg.miningTaxPct / 100;
     const estAfterTax = estAccrued * miningKeep;
     const tax        = taxSavings();
     const gross      = cfg.grossCapital;
-    const recovered  = tax + estAfterTax;
+    const recovered  = tax + estAccrued;
     const remaining  = Math.max(0, gross - recovered);
     const pct        = Math.min(100, recovered / gross * 100);
 
@@ -716,11 +717,12 @@
       "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(gross);
     $("segTax").style.width     = Math.min(100, tax / gross * 100) + "%";
     $("segAccrued").style.width = Math.max(0, Math.min(100 - tax / gross * 100,
-                                           estAfterTax / gross * 100)) + "%";
+                                           estAccrued / gross * 100)) + "%";
     $("recoupBar").setAttribute("aria-label",
-      "Recoupment: tax savings " + fmtUsd(tax) + ", after-tax mining income " + fmtUsd(estAfterTax) +
-      ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(gross));
-    $("legendAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAfterTax);
+      "Recoupment: tax savings " + fmtUsd(tax) + ", mining income " + fmtUsd(estAccrued) +
+      " (" + fmtUsd(estAfterTax) + " after tax), remaining " + fmtUsd(remaining) + " of " + fmtUsd(gross));
+    $("legendAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued) +
+      " (" + fmtUsd(estAfterTax) + " after tax)";
     $("legendRemaining").textContent = fmtUsd(remaining);
     const showOnchain = walletAddresses.length > 0 && walletBtc !== null;
     $("legendOnchain").hidden = !showOnchain;
@@ -748,7 +750,7 @@
     $("tblNetCapital").textContent = fmtUsd(gross - tax);
     $("tblDays").textContent      = Math.floor(days).toLocaleString("en-US");
     $("tblAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued);
-    $("tblMiningTaxLabel").textContent = "Ordinary income tax on mined BTC (" + cfg.miningTaxPct + "%)";
+    $("tblMiningTaxLabel").textContent = "Ordinary income tax if unsheltered (" + cfg.miningTaxPct + "%)";
     $("tblMiningTax").textContent = "−" + fmtUsd(estAccrued - estAfterTax);
     $("tblAfterTax").textContent  = fmtUsd(estAfterTax);
     $("rowActual").hidden         = walletBtc === null;
@@ -797,13 +799,15 @@
     setCell("Mt", "tot", "−" + fmtUsd(tMt), "tax-owed");
     setCell("A", "tot", fmtUsd(tA));
 
-    const totalRecoup = tB + tA;   // deduction benefits + after-tax mining
-    const covers = totalRecoup >= cfg.grossCapital;
+    const totalPre   = tB + tM;   // tax benefits + pre-tax mining
+    const totalAfter = tB + tA;   // conservative: after tax on mining income
+    const covers = totalPre >= cfg.grossCapital;
     $("ledgerSummary").innerHTML =
-      "Projected 4-year recoupment from operations (tax benefits + after-tax mining): <strong>" +
-      fmtUsd(totalRecoup) + "</strong> vs " + fmtUsd(cfg.grossCapital) + " gross capital — " +
+      "Projected 4-year recoupment (tax benefits + mining income): <strong>" +
+      fmtUsd(totalPre) + "</strong> vs " + fmtUsd(cfg.grossCapital) + " gross capital — " +
       (covers ? "fully recovered within the contract"
-              : fmtUsd(cfg.grossCapital - totalRecoup) + " short at today's price & difficulty") + ".";
+              : fmtUsd(cfg.grossCapital - totalPre) + " short at today's price & difficulty") +
+      ". If mining income is fully taxed and unsheltered: " + fmtUsd(totalAfter) + ".";
   }
 
   // ── Bull market simulator ─────────────────────────────────────────────
@@ -827,11 +831,10 @@
     const simDaily   = dailyBtc * simPrice;
     const simMonthly = simDaily * DAYS_PER_MONTH;
 
-    const keep       = 1 - cfg.miningTaxPct / 100;
     const livePrice  = btcPrice ?? FALLBACK_PRICE;
-    const accrued    = dailyBtc * livePrice * daysElapsed() * keep;   // after-tax
+    const accrued    = dailyBtc * livePrice * daysElapsed();
     const remaining  = Math.max(0, cfg.grossCapital - taxSavings() - accrued);
-    const months     = remaining / (simMonthly * keep);              // after-tax run-rate
+    const months     = remaining / simMonthly;
 
     $("simMonthly").textContent = fmtUsd(simMonthly);
     $("simDaily").textContent   = fmtUsd(simDaily, 2) + "/day at " + fmtUsd(simPrice) + " per BTC";
@@ -841,7 +844,7 @@
     } else {
       $("simMonths").textContent = months.toFixed(1) + " mo";
       $("simMonthsDetail").textContent =
-        fmtUsd(remaining) + " still to recover after tax savings + after-tax income to date";
+        fmtUsd(remaining) + " still to recover after tax savings + income to date";
     }
   }
 
