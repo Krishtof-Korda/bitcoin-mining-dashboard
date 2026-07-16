@@ -286,6 +286,29 @@
   .cfg-actions button:hover { border-color: var(--accent); color: var(--text-primary); }
   .cfg-note { font-size: 12.5px; color: var(--text-muted); }
 
+  /* ── Tax model ledger ───────────────────────────────────── */
+  .ledger-wrap { overflow-x: auto; margin-top: 8px; }
+  table.ledger-table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13px; }
+  table.ledger-table th, table.ledger-table td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--gridline); text-align: right; white-space: nowrap; }
+  table.ledger-table thead th { color: var(--text-muted); font-weight: 600; font-size: 11.5px; letter-spacing: 0.03em; text-transform: uppercase; }
+  table.ledger-table th:first-child, table.ledger-table td:first-child { text-align: left; }
+  table.ledger-table tbody th { color: var(--text-secondary); font-weight: 500; }
+  table.ledger-table td.num { font-variant-numeric: tabular-nums; font-weight: 550; }
+  table.ledger-table tfoot td, table.ledger-table tfoot th { border-top: 2px solid var(--baseline); border-bottom: 0; font-weight: 650; color: var(--text-primary); padding-top: 10px; }
+  table.ledger-table td.num input {
+    font: inherit; font-size: 13px; font-weight: 550; color: var(--text-primary);
+    font-variant-numeric: tabular-nums; background: transparent; border: 0;
+    border-bottom: 1px dashed var(--baseline); text-align: right; width: 92px;
+    padding: 2px 2px 3px; outline: 0; border-radius: 0;
+  }
+  table.ledger-table td.num input:hover { border-bottom-color: var(--text-muted); }
+  table.ledger-table td.num input:focus { border-bottom: 1px solid var(--accent); }
+  table.ledger-table td.num input::-webkit-outer-spin-button,
+  table.ledger-table td.num input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  table.ledger-table td.num input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+  .tax-benefit { color: var(--good); }
+  .tax-owed { color: var(--critical); }
+
   footer { margin-top: 22px; font-size: 12.5px; color: var(--text-muted); text-align: center; }
   footer a { color: var(--text-muted); }
 </style>
@@ -381,7 +404,7 @@
 
     <div class="legend">
       <div class="key"><span class="swatch tax"></span><span class="k-label">Tax savings</span><span class="k-value" id="legendTax">$60,564</span></div>
-      <div class="key"><span class="swatch accrued"></span><span class="k-label">Mined to date (est.)</span><span class="k-value" id="legendAccrued">—</span></div>
+      <div class="key"><span class="swatch accrued"></span><span class="k-label">Mined to date (after tax)</span><span class="k-value" id="legendAccrued">—</span></div>
       <div class="key" id="legendOnchain" hidden><span class="swatch onchain"></span><span class="k-label">On-chain received</span><span class="k-value" id="legendOnchainVal">—</span></div>
       <div class="key"><span class="swatch remaining"></span><span class="k-label">Remaining</span><span class="k-value" id="legendRemaining">—</span></div>
     </div>
@@ -453,9 +476,11 @@
           <tr><th>True net capital invested</th><td class="num" id="tblNetCapital">$145,436</td></tr>
           <tr><th>In-service date</th><td class="num"><input id="cfgDate" data-key="startDate" type="date" aria-label="In-service date"></td></tr>
           <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
-          <tr><th>Estimated income to date (current daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
-          <tr id="rowActual" hidden><th>Actual mined on-chain (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
-          <tr><th>Total recovered (tax savings + estimated income)</th><td class="num" id="tblRecovered">—</td></tr>
+          <tr><th>Estimated income to date, pre-tax (daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
+          <tr><th id="tblMiningTaxLabel">Ordinary income tax on mined BTC</th><td class="num tax-owed" id="tblMiningTax">—</td></tr>
+          <tr><th>After-tax mining income to date</th><td class="num" id="tblAfterTax">—</td></tr>
+          <tr id="rowActual" hidden><th>Actual mined on-chain, pre-tax (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
+          <tr><th>Total recovered (tax savings + after-tax income)</th><td class="num" id="tblRecovered">—</td></tr>
           <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
         </tbody>
       </table>
@@ -463,6 +488,72 @@
         <button type="button" id="cfgReset">Reset to defaults</button>
         <span class="cfg-note" id="cfgTaxNote"></span>
       </div>
+
+      <div class="details-h">After-tax &amp; multi-year tax model</div>
+      <p class="wallet-note">
+        Mined BTC is <strong>ordinary income at its value when mined</strong>, so the recoupment bar
+        above now counts mining income after tax. Depreciation and energy deductions are a separate
+        benefit (they offset your other income at your bracket) — but they shrink after year 1 while
+        the mining income keeps being taxed, so the net benefit declines over the contract. This
+        ledger projects all 48 months <strong>at today's price and difficulty</strong> — a steady-state
+        baseline; it does not yet model price growth, difficulty drift, or the 2028 halving. Enter your
+        years 2–4 deductions (continuing depreciation + energy amortization) from your K-1; year 1 is the
+        depreciation figure above. Assumes deductions offset other income. Not tax advice.
+      </p>
+      <table class="detail-table" aria-label="Mining income tax rate">
+        <tbody>
+          <tr><th>Mining income tax rate (%, ordinary income on mined BTC)</th><td class="num"><input id="cfgMiningTax" data-key="miningTaxPct" type="number" min="0" max="100" step="1" aria-label="Mining income tax rate percent"></td></tr>
+        </tbody>
+      </table>
+      <div class="ledger-wrap">
+        <table class="ledger-table" id="taxLedger" aria-label="Four-year after-tax tax projection">
+          <thead>
+            <tr>
+              <th>Contract year</th>
+              <th>Deductions</th>
+              <th>Tax benefit</th>
+              <th>Mining income</th>
+              <th>Mining tax</th>
+              <th>After-tax mining</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th>Year 1</th>
+              <td class="num" data-cell="D" data-yr="1">—</td>
+              <td class="num" data-cell="B" data-yr="1">—</td>
+              <td class="num" data-cell="M" data-yr="1">—</td>
+              <td class="num" data-cell="Mt" data-yr="1">—</td>
+              <td class="num" data-cell="A" data-yr="1">—</td></tr>
+            <tr><th>Year 2</th>
+              <td class="num"><input id="cfgDep2" data-key="depYr2" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 2 deductions in US dollars"></td>
+              <td class="num" data-cell="B" data-yr="2">—</td>
+              <td class="num" data-cell="M" data-yr="2">—</td>
+              <td class="num" data-cell="Mt" data-yr="2">—</td>
+              <td class="num" data-cell="A" data-yr="2">—</td></tr>
+            <tr><th>Year 3</th>
+              <td class="num"><input id="cfgDep3" data-key="depYr3" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 3 deductions in US dollars"></td>
+              <td class="num" data-cell="B" data-yr="3">—</td>
+              <td class="num" data-cell="M" data-yr="3">—</td>
+              <td class="num" data-cell="Mt" data-yr="3">—</td>
+              <td class="num" data-cell="A" data-yr="3">—</td></tr>
+            <tr><th>Year 4</th>
+              <td class="num"><input id="cfgDep4" data-key="depYr4" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 4 deductions in US dollars"></td>
+              <td class="num" data-cell="B" data-yr="4">—</td>
+              <td class="num" data-cell="M" data-yr="4">—</td>
+              <td class="num" data-cell="Mt" data-yr="4">—</td>
+              <td class="num" data-cell="A" data-yr="4">—</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><th>Total</th>
+              <td class="num" data-cell="D" data-yr="tot">—</td>
+              <td class="num" data-cell="B" data-yr="tot">—</td>
+              <td class="num" data-cell="M" data-yr="tot">—</td>
+              <td class="num" data-cell="Mt" data-yr="tot">—</td>
+              <td class="num" data-cell="A" data-yr="tot">—</td></tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="cfg-note" id="ledgerSummary"></p>
 
       <div class="details-h">Wallet tracking (optional)</div>
       <p class="wallet-note">
@@ -492,6 +583,8 @@
         (longer ranges), refreshed at most every 5 minutes per range.
         On-chain wallet totals (when tracking is enabled) come from Blockchain.info with
         <a href="https://mempool.space" rel="noopener">mempool.space</a> as fallback — read-only lookups of public addresses.
+        Recoupment counts mined BTC after ordinary income tax; depreciation and energy deductions are a
+        separate benefit that offsets other income (see the tax model above).
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
       </p>
     </div>
@@ -512,7 +605,11 @@
     grossCapital:    206000,
     prepaidPower:    85000,
     depreciationPct: 70,     // Year-1 depreciation baseline
-    taxBracketPct:   42,     // high-earner bracket
+    taxBracketPct:   42,     // high-earner bracket (deductions offset other income)
+    miningTaxPct:    42,     // ordinary income tax on mined BTC at receipt
+    depYr2:          0,      // additional deductions in contract years 2–4
+    depYr3:          0,      //   (continuing depreciation + energy amortization);
+    depYr4:          0,      //   default 0 — fill from your K-1
     startDate:       "2026-06-25",
     machines:        11,
     thPerMachine:    215,
@@ -583,9 +680,13 @@
     // total (when a wallet is tracked) is displayed alongside it.
     const estBtc     = dailyBtc * days;
     const estAccrued = dailyUsd * days;
+    // Mined BTC is ordinary income at its value when mined, so the amount
+    // that actually recoups capital is the after-tax figure.
+    const miningKeep = 1 - cfg.miningTaxPct / 100;
+    const estAfterTax = estAccrued * miningKeep;
     const tax        = taxSavings();
     const gross      = cfg.grossCapital;
-    const recovered  = tax + estAccrued;
+    const recovered  = tax + estAfterTax;
     const remaining  = Math.max(0, gross - recovered);
     const pct        = Math.min(100, recovered / gross * 100);
 
@@ -615,11 +716,11 @@
       "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(gross);
     $("segTax").style.width     = Math.min(100, tax / gross * 100) + "%";
     $("segAccrued").style.width = Math.max(0, Math.min(100 - tax / gross * 100,
-                                           estAccrued / gross * 100)) + "%";
+                                           estAfterTax / gross * 100)) + "%";
     $("recoupBar").setAttribute("aria-label",
-      "Recoupment: tax savings " + fmtUsd(tax) + ", estimated income " + fmtUsd(estAccrued) +
+      "Recoupment: tax savings " + fmtUsd(tax) + ", after-tax mining income " + fmtUsd(estAfterTax) +
       ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(gross));
-    $("legendAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued);
+    $("legendAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAfterTax);
     $("legendRemaining").textContent = fmtUsd(remaining);
     const showOnchain = walletAddresses.length > 0 && walletBtc !== null;
     $("legendOnchain").hidden = !showOnchain;
@@ -647,15 +748,62 @@
     $("tblNetCapital").textContent = fmtUsd(gross - tax);
     $("tblDays").textContent      = Math.floor(days).toLocaleString("en-US");
     $("tblAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued);
+    $("tblMiningTaxLabel").textContent = "Ordinary income tax on mined BTC (" + cfg.miningTaxPct + "%)";
+    $("tblMiningTax").textContent = "−" + fmtUsd(estAccrued - estAfterTax);
+    $("tblAfterTax").textContent  = fmtUsd(estAfterTax);
     $("rowActual").hidden         = walletBtc === null;
     if (walletBtc !== null)
       $("tblActual").textContent  = fmtBtc(walletBtc) + " BTC · " + fmtUsd(walletBtc * price);
     $("tblRecovered").textContent = fmtUsd(recovered);
     $("tblRemaining").textContent = fmtUsd(remaining);
 
+    renderTaxLedger(dailyUsd * 365.25);
+
     // Status line
     $("daysElapsed").textContent = "Day " + Math.floor(days) + " of contract";
     renderSimulator();
+  }
+
+  // ── Multi-year tax ledger (projection at today's price & difficulty) ──
+  function renderTaxLedger(annualMiningUsd) {
+    const bracket   = cfg.taxBracketPct / 100;
+    const miningTax = cfg.miningTaxPct / 100;
+    const deductions = [
+      cfg.grossCapital * (cfg.depreciationPct / 100),  // year 1
+      cfg.depYr2, cfg.depYr3, cfg.depYr4,              // years 2–4 (from K-1)
+    ];
+    const setCell = (k, yr, txt, cls) => {
+      const el = document.querySelector('[data-cell="' + k + '"][data-yr="' + yr + '"]');
+      if (el) { el.textContent = txt; el.className = "num" + (cls ? " " + cls : ""); }
+    };
+
+    let tD = 0, tB = 0, tM = 0, tMt = 0, tA = 0;
+    for (let i = 0; i < 4; i++) {
+      const yr = i + 1;
+      const D = deductions[i];
+      const benefit = D * bracket;
+      const M = annualMiningUsd;
+      const mtax = M * miningTax;
+      setCell("D", yr, fmtUsd(D));                                        // year 1 only (2–4 are inputs)
+      setCell("B", yr, benefit ? "+" + fmtUsd(benefit) : "—", benefit ? "tax-benefit" : "");
+      setCell("M", yr, fmtUsd(M));
+      setCell("Mt", yr, mtax ? "−" + fmtUsd(mtax) : "—", mtax ? "tax-owed" : "");
+      setCell("A", yr, fmtUsd(M - mtax));
+      tD += D; tB += benefit; tM += M; tMt += mtax; tA += M - mtax;
+    }
+    setCell("D", "tot", fmtUsd(tD));
+    setCell("B", "tot", "+" + fmtUsd(tB), "tax-benefit");
+    setCell("M", "tot", fmtUsd(tM));
+    setCell("Mt", "tot", "−" + fmtUsd(tMt), "tax-owed");
+    setCell("A", "tot", fmtUsd(tA));
+
+    const totalRecoup = tB + tA;   // deduction benefits + after-tax mining
+    const covers = totalRecoup >= cfg.grossCapital;
+    $("ledgerSummary").innerHTML =
+      "Projected 4-year recoupment from operations (tax benefits + after-tax mining): <strong>" +
+      fmtUsd(totalRecoup) + "</strong> vs " + fmtUsd(cfg.grossCapital) + " gross capital — " +
+      (covers ? "fully recovered within the contract"
+              : fmtUsd(cfg.grossCapital - totalRecoup) + " short at today's price & difficulty") + ".";
   }
 
   // ── Bull market simulator ─────────────────────────────────────────────
@@ -679,10 +827,11 @@
     const simDaily   = dailyBtc * simPrice;
     const simMonthly = simDaily * DAYS_PER_MONTH;
 
+    const keep       = 1 - cfg.miningTaxPct / 100;
     const livePrice  = btcPrice ?? FALLBACK_PRICE;
-    const accrued    = dailyBtc * livePrice * daysElapsed();
+    const accrued    = dailyBtc * livePrice * daysElapsed() * keep;   // after-tax
     const remaining  = Math.max(0, cfg.grossCapital - taxSavings() - accrued);
-    const months     = remaining / simMonthly;
+    const months     = remaining / (simMonthly * keep);              // after-tax run-rate
 
     $("simMonthly").textContent = fmtUsd(simMonthly);
     $("simDaily").textContent   = fmtUsd(simDaily, 2) + "/day at " + fmtUsd(simPrice) + " per BTC";
@@ -692,7 +841,7 @@
     } else {
       $("simMonths").textContent = months.toFixed(1) + " mo";
       $("simMonthsDetail").textContent =
-        fmtUsd(remaining) + " still to recover after tax savings + income to date";
+        fmtUsd(remaining) + " still to recover after tax savings + after-tax income to date";
     }
   }
 
@@ -814,7 +963,7 @@
   $("addrInput").addEventListener("keydown", e => { if (e.key === "Enter") addAddress(); });
 
   // ── Contract config (inline-editable table rows) ─────────────────────
-  const cfgInputs = document.querySelectorAll(".detail-table input[data-key]");
+  const cfgInputs = document.querySelectorAll("#detailsPanel input[data-key]");
 
   function saveCfg() {
     try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) {}
