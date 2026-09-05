@@ -1,6 +1,6 @@
 # Bitcoin Mining Dashboard
 
-A single-file, zero-dependency dashboard for tracking a Bitcoin mining contract in real
+A single-file, zero-dependency dashboard for tracking one or more Bitcoin mining contracts in real
 time — live price and difficulty, estimated yield, capital recoupment progress, a price
 history chart, a bull-market simulator, and optional read-only wallet tracking.
 
@@ -25,6 +25,10 @@ Download it, open it in a browser, and it works.
   monthly income and months remaining to break even.
 - **Wallet tracking (optional)** — paste your pool's payout address to see the actual BTC
   received on-chain alongside the estimate. Read-only: an address can never spend funds.
+- **Multiple contracts** — run several hardware deals side by side (each with its own
+  rigs, hashrate, capital, pool fee and start date). Pills at the top switch between
+  **All** and any individual contract; every figure on the page — KPIs, recoupment bar,
+  price chart, simulator and tax model — recalculates for the selection.
 - **Fully configurable** — every contract parameter is editable in the UI and saved in
   your browser only, so the repo never contains anyone's personal numbers.
 - **Light & dark mode** — follows your system theme, with colorblind-safe chart colors.
@@ -40,10 +44,11 @@ Download it, open it in a browser, and it works.
 2. **Open `index.html` in any modern browser.** That's it — no server, no install.
    Live data starts loading immediately.
 
-3. **Enter your contract** — expand **Contract details & methodology** at the bottom.
-   Values with a dashed underline are editable: gross capital, tax assumptions, start
-   date, machine count and hashrate, pool fee, block reward. Every figure on the page
-   recalculates as you type.
+3. **Enter your contract** — pick a single contract in the pills at the top, then expand
+   **Contract details & methodology** at the bottom. Values with a dashed underline are
+   editable: gross capital, tax assumptions, start date, machine count and hashrate, pool
+   fee, and per-year deductions. Every figure on the page recalculates as you type.
+   Select **All** to see every contract side by side with fleet totals.
 
 Your edits are stored in the browser's `localStorage` — they survive reloads on your
 machine and are never written back to the file or the repo. **Reset to defaults**

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bitcoin Mining Contract Dashboard</title>
+<title>Bitcoin Mining Dashboard</title>
 <style>
   :root {
     --page:           #f6f7f9;
@@ -151,6 +151,29 @@
   }
   .range-pills button:hover { border-color: var(--accent); color: var(--text-primary); }
   .range-pills button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* ── Fleet / contract selector ──────────────────────────── */
+  .fleet-pills { display: flex; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+  .fleet-pills button {
+    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-secondary);
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 999px;
+    padding: 5px 14px; cursor: pointer; box-shadow: var(--shadow);
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .fleet-pills button:hover { border-color: var(--accent); color: var(--text-primary); }
+  .fleet-pills button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fleet-pills button .pill-sub { font-weight: 450; opacity: 0.75; margin-left: 6px; }
+
+  /* ── Per-contract comparison table ──────────────────────── */
+  .cmp-wrap { overflow-x: auto; margin-top: 8px; }
+  table.cmp-table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 13px; }
+  table.cmp-table th, table.cmp-table td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--gridline); text-align: right; white-space: nowrap; }
+  table.cmp-table thead th { color: var(--text-muted); font-weight: 600; font-size: 11.5px; letter-spacing: 0.03em; text-transform: uppercase; }
+  table.cmp-table th:first-child, table.cmp-table td:first-child { text-align: left; white-space: normal; }
+  table.cmp-table tbody th { color: var(--text-primary); font-weight: 600; }
+  table.cmp-table td { font-variant-numeric: tabular-nums; font-weight: 550; }
+  table.cmp-table tfoot td, table.cmp-table tfoot th { border-top: 2px solid var(--baseline); border-bottom: 0; font-weight: 650; padding-top: 10px; }
+  .cmp-pending { color: var(--text-muted); font-weight: 450; font-style: italic; }
+
   .chart-wrap { position: relative; margin-top: 14px; }
   #priceChart { display: block; width: 100%; }
   .chart-tip {
@@ -286,6 +309,29 @@
   .cfg-actions button:hover { border-color: var(--accent); color: var(--text-primary); }
   .cfg-note { font-size: 12.5px; color: var(--text-muted); }
 
+  /* ── Tax model ledger ───────────────────────────────────── */
+  .ledger-wrap { overflow-x: auto; margin-top: 8px; }
+  table.ledger-table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13px; }
+  table.ledger-table th, table.ledger-table td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--gridline); text-align: right; white-space: nowrap; }
+  table.ledger-table thead th { color: var(--text-muted); font-weight: 600; font-size: 11.5px; letter-spacing: 0.03em; text-transform: uppercase; }
+  table.ledger-table th:first-child, table.ledger-table td:first-child { text-align: left; }
+  table.ledger-table tbody th { color: var(--text-secondary); font-weight: 500; }
+  table.ledger-table td.num { font-variant-numeric: tabular-nums; font-weight: 550; }
+  table.ledger-table tfoot td, table.ledger-table tfoot th { border-top: 2px solid var(--baseline); border-bottom: 0; font-weight: 650; color: var(--text-primary); padding-top: 10px; }
+  table.ledger-table td.num input {
+    font: inherit; font-size: 13px; font-weight: 550; color: var(--text-primary);
+    font-variant-numeric: tabular-nums; background: transparent; border: 0;
+    border-bottom: 1px dashed var(--baseline); text-align: right; width: 92px;
+    padding: 2px 2px 3px; outline: 0; border-radius: 0;
+  }
+  table.ledger-table td.num input:hover { border-bottom-color: var(--text-muted); }
+  table.ledger-table td.num input:focus { border-bottom: 1px solid var(--accent); }
+  table.ledger-table td.num input::-webkit-outer-spin-button,
+  table.ledger-table td.num input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  table.ledger-table td.num input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+  .tax-benefit { color: var(--good); }
+  .tax-owed { color: var(--critical); }
+
   footer { margin-top: 22px; font-size: 12.5px; color: var(--text-muted); text-align: center; }
   footer a { color: var(--text-muted); }
 </style>
@@ -301,6 +347,7 @@
         <div class="sub" id="headerSub">11 × Avalon A15 Pro · 2,365 TH/s · in service June 25, 2026</div>
       </div>
     </div>
+    <div class="fleet-pills" id="fleetPills" role="group" aria-label="Contract selection"></div>
     <div class="statusline">
       <span class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Connecting…</span></span>
       <span id="lastUpdated"></span>
@@ -430,13 +477,32 @@
       </svg>
     </summary>
     <div class="details-body">
-      <div class="details-h">Contract &amp; recoupment figures</div>
+      <div class="details-h" id="cfgHeading">Contract &amp; recoupment figures</div>
       <p class="wallet-note">
         Values with a <strong>dashed underline are editable</strong> — forked this dashboard? Enter
-        your own contract and every figure on the page recalculates instantly. Edits are saved in
-        <strong>this browser only</strong> (localStorage); the file itself never changes, so nothing
-        personal ends up in a repo.
+        your own contracts and every figure on the page recalculates instantly. Use the pills at the
+        top to switch between <strong>All</strong> and an individual contract; pick a single contract
+        to edit its parameters. Edits are saved in <strong>this browser only</strong> (localStorage);
+        the file itself never changes, so nothing personal ends up in a repo.
       </p>
+
+      <div id="cfgAllView" hidden>
+        <div class="cmp-wrap">
+          <table class="cmp-table" aria-label="Per-contract comparison">
+            <thead>
+              <tr>
+                <th>Contract</th><th>Rigs</th><th>Hashrate</th><th>In service</th><th>Days</th>
+                <th>Gross capital</th><th>Tax savings</th><th>Income to date</th><th>Recovered</th>
+              </tr>
+            </thead>
+            <tbody id="cmpBody"></tbody>
+            <tfoot id="cmpFoot"></tfoot>
+          </table>
+        </div>
+        <p class="cfg-note">Select a single contract in the pills above to edit its parameters.</p>
+      </div>
+
+      <div id="cfgSingleView">
       <table class="detail-table" aria-label="Contract and recoupment figures">
         <tbody>
           <tr><th>Miner model</th><td class="num"><input class="wide" id="cfgModel" data-key="minerModel" type="text" maxlength="40" aria-label="Miner model"></td></tr>
@@ -444,25 +510,101 @@
           <tr><th>Hashrate per machine (TH/s)</th><td class="num"><input id="cfgTh" data-key="thPerMachine" type="number" min="1" step="1" aria-label="Hashrate per machine in terahash per second"></td></tr>
           <tr><th>Fleet hashrate</th><td class="num" id="tblHashrate">—</td></tr>
           <tr><th>Pool fee (%)</th><td class="num"><input id="cfgFee" data-key="poolFeePct" type="number" min="0" max="100" step="0.1" aria-label="Pool fee percent"></td></tr>
-          <tr><th>Block reward (BTC)</th><td class="num"><input id="cfgReward" data-key="blockReward" type="number" min="0.00000001" step="0.001" aria-label="Block reward in BTC"></td></tr>
           <tr><th>Gross capital invested (USD)</th><td class="num"><input id="cfgGross" data-key="grossCapital" data-fmt="usd" data-min="1" type="text" inputmode="decimal" aria-label="Gross capital in US dollars"></td></tr>
           <tr><th>Prepaid power bucket (USD, prepaid upfront — no monthly bills)</th><td class="num"><input id="cfgPrepaid" data-key="prepaidPower" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Prepaid power in US dollars"></td></tr>
           <tr><th>Depreciation (%)</th><td class="num"><input id="cfgDep" data-key="depreciationPct" type="number" min="0" max="100" step="1" aria-label="Depreciation percent"></td></tr>
           <tr><th>Tax bracket (%)</th><td class="num"><input id="cfgTax" data-key="taxBracketPct" type="number" min="0" max="100" step="1" aria-label="Tax bracket percent"></td></tr>
+          <tr><th>Mining income tax rate (%, ordinary income on mined BTC)</th><td class="num"><input id="cfgMiningTax" data-key="miningTaxPct" type="number" min="0" max="100" step="1" aria-label="Mining income tax rate percent"></td></tr>
           <tr><th>Year-1 tax savings (gross × depreciation × bracket)</th><td class="num" id="tblTaxSavings">$60,564</td></tr>
           <tr><th>True net capital invested</th><td class="num" id="tblNetCapital">$145,436</td></tr>
+          <tr><th>Year 2 deductions (USD, from your K-1)</th><td class="num"><input id="cfgDep2" data-key="depYr2" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 2 deductions in US dollars"></td></tr>
+          <tr><th>Year 3 deductions (USD, from your K-1)</th><td class="num"><input id="cfgDep3" data-key="depYr3" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 3 deductions in US dollars"></td></tr>
+          <tr><th>Year 4 deductions (USD, from your K-1)</th><td class="num"><input id="cfgDep4" data-key="depYr4" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 4 deductions in US dollars"></td></tr>
           <tr><th>In-service date</th><td class="num"><input id="cfgDate" data-key="startDate" type="date" aria-label="In-service date"></td></tr>
           <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
-          <tr><th>Estimated income to date (current daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
-          <tr id="rowActual" hidden><th>Actual mined on-chain (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
-          <tr><th>Total recovered (tax savings + estimated income)</th><td class="num" id="tblRecovered">—</td></tr>
+          <tr><th>Estimated income to date, pre-tax (daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
+          <tr><th id="tblMiningTaxLabel">Ordinary income tax on mined BTC</th><td class="num tax-owed" id="tblMiningTax">—</td></tr>
+          <tr><th>Mining income after tax (conservative reference)</th><td class="num" id="tblAfterTax">—</td></tr>
+          <tr id="rowActual" hidden><th>Actual mined on-chain, pre-tax (tracked wallet)</th><td class="num" id="tblActual">—</td></tr>
+          <tr><th>Total recovered (tax savings + mining income)</th><td class="num" id="tblRecovered">—</td></tr>
           <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
         </tbody>
       </table>
       <div class="cfg-actions">
-        <button type="button" id="cfgReset">Reset to defaults</button>
+        <button type="button" id="cfgReset">Reset all contracts to defaults</button>
         <span class="cfg-note" id="cfgTaxNote"></span>
       </div>
+      </div>
+
+      <div class="details-h">Network</div>
+      <table class="detail-table" aria-label="Network settings">
+        <tbody>
+          <tr><th>Block reward (BTC) — network-wide, halves ~2028</th><td class="num"><input id="cfgReward" data-gkey="blockReward" type="number" min="0.00000001" step="0.001" aria-label="Block reward in BTC"></td></tr>
+        </tbody>
+      </table>
+
+      <div class="details-h">After-tax &amp; multi-year tax model</div>
+      <p class="wallet-note">
+        Mined BTC is ordinary income when mined — but <strong>depreciation and energy deductions can
+        shelter it</strong>, so recoupment counts mining income pre-tax, with the after-tax figure shown
+        alongside as a conservative reference. This ledger projects all 48 months
+        <strong>at today's price and difficulty</strong> — a steady-state baseline; it does not yet model
+        price growth, difficulty drift, or the 2028 halving. With <strong>All</strong> selected it sums every
+        contract; pick one contract to see and edit just that deal. Enter your years 2–4 deductions
+        (continuing depreciation + energy amortization) from your K-1 in the contract table above;
+        year 1 is derived from the depreciation percentage. The
+        "Mining tax" column is the exposure <em>if</em> that income were fully taxed and unsheltered.
+        Assumes deductions offset other income. Not tax advice.
+      </p>
+      <div class="ledger-wrap">
+        <table class="ledger-table" id="taxLedger" aria-label="Four-year after-tax tax projection">
+          <thead>
+            <tr>
+              <th>Contract year</th>
+              <th>Deductions</th>
+              <th>Tax benefit</th>
+              <th>Mining income</th>
+              <th>Mining tax (if unsheltered)</th>
+              <th>After-tax mining</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th>Year 1</th>
+              <td class="num" data-cell="D" data-yr="1">—</td>
+              <td class="num" data-cell="B" data-yr="1">—</td>
+              <td class="num" data-cell="M" data-yr="1">—</td>
+              <td class="num" data-cell="Mt" data-yr="1">—</td>
+              <td class="num" data-cell="A" data-yr="1">—</td></tr>
+            <tr><th>Year 2</th>
+              <td class="num" data-cell="D" data-yr="2">—</td>
+              <td class="num" data-cell="B" data-yr="2">—</td>
+              <td class="num" data-cell="M" data-yr="2">—</td>
+              <td class="num" data-cell="Mt" data-yr="2">—</td>
+              <td class="num" data-cell="A" data-yr="2">—</td></tr>
+            <tr><th>Year 3</th>
+              <td class="num" data-cell="D" data-yr="3">—</td>
+              <td class="num" data-cell="B" data-yr="3">—</td>
+              <td class="num" data-cell="M" data-yr="3">—</td>
+              <td class="num" data-cell="Mt" data-yr="3">—</td>
+              <td class="num" data-cell="A" data-yr="3">—</td></tr>
+            <tr><th>Year 4</th>
+              <td class="num" data-cell="D" data-yr="4">—</td>
+              <td class="num" data-cell="B" data-yr="4">—</td>
+              <td class="num" data-cell="M" data-yr="4">—</td>
+              <td class="num" data-cell="Mt" data-yr="4">—</td>
+              <td class="num" data-cell="A" data-yr="4">—</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><th>Total</th>
+              <td class="num" data-cell="D" data-yr="tot">—</td>
+              <td class="num" data-cell="B" data-yr="tot">—</td>
+              <td class="num" data-cell="M" data-yr="tot">—</td>
+              <td class="num" data-cell="Mt" data-yr="tot">—</td>
+              <td class="num" data-cell="A" data-yr="tot">—</td></tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="cfg-note" id="ledgerSummary"></p>
 
       <div class="details-h">Wallet tracking (optional)</div>
       <p class="wallet-note">
@@ -492,6 +634,8 @@
         (longer ranges), refreshed at most every 5 minutes per range.
         On-chain wallet totals (when tracking is enabled) come from Blockchain.info with
         <a href="https://mempool.space" rel="noopener">mempool.space</a> as fallback — read-only lookups of public addresses.
+        Recoupment counts mined BTC pre-tax, with the after-tax figure shown as a conservative reference;
+        depreciation and energy deductions can shelter the mining income (see the tax model above).
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
       </p>
     </div>
@@ -504,32 +648,75 @@
 (() => {
   "use strict";
 
-  // ── Contract configuration (editable in the details panel) ───────────
-  // Defaults describe the reference contract; forkers override them in the
-  // UI and the overrides live in localStorage — never in this file.
-  const CFG_KEY = "btc-dashboard-config";
-  const DEFAULT_CFG = {
-    grossCapital:    206000,
-    prepaidPower:    85000,
-    depreciationPct: 70,     // Year-1 depreciation baseline
-    taxBracketPct:   42,     // high-earner bracket
-    startDate:       "2026-06-25",
-    machines:        11,
-    thPerMachine:    215,
-    poolFeePct:      2,
-    blockReward:     3.125,
-    minerModel:      "Canaan Avalon A15 Pro",
-  };
-  let cfg = { ...DEFAULT_CFG };
-  try { cfg = { ...DEFAULT_CFG, ...(JSON.parse(localStorage.getItem(CFG_KEY)) || {}) }; } catch (e) {}
+  // ── Contracts & global settings (editable in the details panel) ──────
+  // Defaults describe the reference fleet; forkers override them in the UI
+  // and the overrides live in localStorage — never in this file.
+  const CFG_KEY       = "btc-dashboard-config";     // legacy single-contract key
+  const CONTRACTS_KEY = "btc-dashboard-contracts";
+  const GLOBAL_KEY    = "btc-dashboard-global";
 
-  const taxSavings    = () => cfg.grossCapital * (cfg.depreciationPct / 100) * (cfg.taxBracketPct / 100);
-  const totalTh       = () => cfg.machines * cfg.thPerMachine;
-  const poolFactor    = () => 1 - cfg.poolFeePct / 100;
-  const inServiceDate = () => {
-    const [y, m, d] = cfg.startDate.split("-").map(Number);
-    return new Date(y, m - 1, d);
+  const DEFAULT_CONTRACTS = [
+    {
+      id: "avalon", label: "Avalon A15 Pro",
+      minerModel: "Canaan Avalon A15 Pro", machines: 11, thPerMachine: 215,
+      grossCapital: 206000, prepaidPower: 85000, poolFeePct: 2,
+      depreciationPct: 70,   // Year-1 depreciation baseline
+      taxBracketPct: 42,     // high-earner bracket (deductions offset other income)
+      miningTaxPct: 42,      // ordinary income tax on mined BTC at receipt
+      depYr2: 0, depYr3: 0, depYr4: 0,   // years 2–4 deductions — fill from your K-1
+      startDate: "2026-06-25",
+    },
+    {
+      id: "s21xp", label: "S21 XP",
+      minerModel: "Bitmain Antminer S21 XP", machines: 5, thPerMachine: 270,
+      grossCapital: 99000, prepaidPower: 39600, poolFeePct: 2,
+      depreciationPct: 70, taxBracketPct: 42, miningTaxPct: 42,
+      depYr2: 0, depYr3: 0, depYr4: 0,
+      startDate: "2026-09-01",
+    },
+  ];
+  const DEFAULT_GLOBAL = { blockReward: 3.125, selected: "all" };
+
+  // Short label for the selector pills, derived from the miner model.
+  const deriveLabel = model => {
+    const w = String(model).trim().split(/\s+/);
+    return w.length > 3 ? w.slice(-3).join(" ") : w.join(" ");
   };
+
+  let contracts = DEFAULT_CONTRACTS.map(c => ({ ...c }));
+  let gcfg = { ...DEFAULT_GLOBAL };
+  try {
+    const saved = JSON.parse(localStorage.getItem(CONTRACTS_KEY));
+    if (Array.isArray(saved) && saved.length) {
+      contracts = saved.map((c, i) => ({ ...(DEFAULT_CONTRACTS[i] || DEFAULT_CONTRACTS[0]), ...c }));
+    } else {
+      // Migrate a pre-multi-contract config into the first contract.
+      const legacy = JSON.parse(localStorage.getItem(CFG_KEY));
+      if (legacy && typeof legacy === "object") {
+        if (legacy.blockReward) DEFAULT_GLOBAL.blockReward = legacy.blockReward;
+        delete legacy.blockReward;
+        contracts[0] = { ...contracts[0], ...legacy };
+        if (legacy.minerModel) contracts[0].label = deriveLabel(legacy.minerModel);
+      }
+    }
+  } catch (e) {}
+  try { gcfg = { ...DEFAULT_GLOBAL, ...(JSON.parse(localStorage.getItem(GLOBAL_KEY)) || {}) }; } catch (e) {}
+  if (gcfg.selected !== "all" && !contracts.some(c => c.id === gcfg.selected)) gcfg.selected = "all";
+
+  // ── Per-contract math ─────────────────────────────────────────────────
+  const cTh    = c => c.machines * c.thPerMachine;
+  const cStart = c => { const [y, m, d] = c.startDate.split("-").map(Number); return new Date(y, m - 1, d); };
+  const cDays  = c => Math.max(0, (Date.now() - cStart(c).getTime()) / 86400000);
+  const cLive  = c => Date.now() >= cStart(c).getTime();
+  const cTax   = c => c.grossCapital * (c.depreciationPct / 100) * (c.taxBracketPct / 100);
+  const cDailyBtc = (c, diff) =>
+    ((cTh(c) * Math.pow(10, 12) * 86400 * gcfg.blockReward) / (diff * Math.pow(2, 32)))
+      * (1 - c.poolFeePct / 100);
+
+  // Contracts currently in view: all of them, or just the selected one.
+  const viewContracts   = () => gcfg.selected === "all"
+    ? contracts : contracts.filter(c => c.id === gcfg.selected);
+  const selectedContract = () => contracts.find(c => c.id === gcfg.selected) || null;
 
   const DAYS_PER_MONTH = 365.25 / 12;    // 30.4375
   const REFRESH_MS     = 60000;
@@ -557,83 +744,110 @@
       minimumFractionDigits: digits, maximumFractionDigits: digits });
   const fmtBtc  = v => v.toFixed(6);
 
-  // ── Core mining math (per contract brief) ─────────────────────────────
-  function netDailyBtc(liveDifficulty) {
-    const difficultyHashFactor = liveDifficulty * Math.pow(2, 32);
-    const dailyHashes = totalTh() * Math.pow(10, 12) * 86400;
-    const grossDailyBtc = (dailyHashes * cfg.blockReward) / difficultyHashFactor;
-    return grossDailyBtc * poolFactor();
+  // ── Fleet aggregation over the contracts in view ──────────────────────
+  // Each contract has its own hashrate, pool fee and start date, so income
+  // is computed per contract and summed — never from a blended average.
+  function totalsFor(cs, price, diff) {
+    const t = { cs, rigs: 0, th: 0, gross: 0, tax: 0, prepaid: 0,
+                dailyBtc: 0, estBtc: 0, estUsd: 0, estAfter: 0, annualUsd: 0, annualTax: 0 };
+    for (const c of cs) {
+      const dB = cDailyBtc(c, diff), d = cDays(c);
+      t.rigs += c.machines; t.th += cTh(c);
+      t.gross += c.grossCapital; t.tax += cTax(c); t.prepaid += c.prepaidPower;
+      if (cLive(c)) t.dailyBtc += dB;          // not-yet-activated rigs earn nothing today
+      t.estBtc   += dB * d;
+      t.estUsd   += dB * price * d;
+      t.estAfter += dB * price * d * (1 - c.miningTaxPct / 100);
+      t.annualUsd += dB * price * 365.25;      // steady-state full-year run-rate
+      t.annualTax += dB * price * 365.25 * (c.miningTaxPct / 100);
+    }
+    return t;
   }
+  const viewTotals = (price, diff) => totalsFor(viewContracts(), price, diff);
 
-  function daysElapsed() {
-    return Math.max(0, (Date.now() - inServiceDate().getTime()) / 86400000);
-  }
+  // Earliest in-service date across the contracts in view.
+  const viewStart = () => {
+    const ts = viewContracts().map(c => cStart(c).getTime());
+    return new Date(ts.length ? Math.min(...ts) : Date.now());
+  };
+  const daysElapsed = () => Math.max(0, (Date.now() - viewStart().getTime()) / 86400000);
 
 
   // ── Render ────────────────────────────────────────────────────────────
   function render() {
     const price = btcPrice ?? FALLBACK_PRICE;
     const diff  = difficulty ?? FALLBACK_DIFFICULTY;
+    const t     = viewTotals(price, diff);
+    const allT  = totalsFor(contracts, price, diff);
+    const sel   = selectedContract();
 
-    const dailyBtc   = netDailyBtc(diff);
-    const dailyUsd   = dailyBtc * price;
+    const dailyUsd   = t.dailyBtc * price;
     const monthlyUsd = dailyUsd * DAYS_PER_MONTH;
     const days       = daysElapsed();
-    // The run-rate estimate drives the bar and break-even; the on-chain
-    // total (when a wallet is tracked) is displayed alongside it.
-    const estBtc     = dailyBtc * days;
-    const estAccrued = dailyUsd * days;
-    const tax        = taxSavings();
-    const gross      = cfg.grossCapital;
-    const recovered  = tax + estAccrued;
-    const remaining  = Math.max(0, gross - recovered);
-    const pct        = Math.min(100, recovered / gross * 100);
+    // Recoupment counts mining income pre-tax; the after-tax figure rides
+    // along as a conservative reference (deductions can shelter it).
+    const recovered  = t.tax + t.estUsd;
+    const remaining  = Math.max(0, t.gross - recovered);
+    const pct        = t.gross > 0 ? Math.min(100, recovered / t.gross * 100) : 0;
 
-    // Contract-derived chrome
-    const dateStr = inServiceDate().toLocaleDateString("en-US",
-      { month: "long", day: "numeric", year: "numeric" });
-    $("headerSub").textContent = cfg.machines + " × " + cfg.minerModel + " · " +
-      totalTh().toLocaleString("en-US") + " TH/s · in service " + dateStr;
-    $("recoupSub").textContent =
-      "Progress toward recovering the full " + fmtUsd(gross) + " gross capital.";
-    $("barMax").textContent   = fmtUsd(gross);
-    $("legendTax").textContent = fmtUsd(tax);
-    $("cfgTaxNote").textContent = "Year-1 tax savings: " + fmtUsd(tax) +
-      " = gross × " + cfg.depreciationPct + "% × " + cfg.taxBracketPct + "%";
+    // Header + document title describe the rigs actually in view
+    const dstr = d => d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    if (sel) {
+      $("headerSub").textContent = sel.machines + " × " + sel.minerModel + " · " +
+        cTh(sel).toLocaleString("en-US") + " TH/s · " +
+        (cLive(sel) ? "in service " + dstr(cStart(sel)) : "activates " + dstr(cStart(sel)));
+      document.title = sel.label + " · Bitcoin Mining Dashboard";
+    } else {
+      $("headerSub").textContent = contracts.map(c => c.machines + " × " + c.label).join("  +  ") +
+        " · " + t.th.toLocaleString("en-US") + " TH/s · " + fmtUsd(t.gross) + " deployed";
+      document.title = "Bitcoin Mining Dashboard · " + t.th.toLocaleString("en-US") + " TH/s";
+    }
+    $("cfgHeading").textContent = sel ? sel.label + " — contract & recoupment figures"
+                                      : "All contracts — side by side";
+    $("recoupSub").textContent = "Progress toward recovering the full " + fmtUsd(t.gross) +
+      " gross capital" + (sel ? " for this contract." : " across all contracts.");
+    $("barMax").textContent     = fmtUsd(t.gross);
+    $("legendTax").textContent  = fmtUsd(t.tax);
+    $("cfgTaxNote").textContent = sel ? "Year-1 tax savings: " + fmtUsd(cTax(sel)) +
+      " = gross × " + sel.depreciationPct + "% × " + sel.taxBracketPct + "%" : "";
 
     // KPI cards
     $("kpiPrice").textContent      = fmtUsd(price);
     $("kpiDifficulty").textContent = (diff / 1e12).toFixed(2) + " T";
     $("kpiDailyUsd").textContent   = fmtUsd(dailyUsd, 2);
-    $("kpiDailyBtc").textContent   = fmtBtc(dailyBtc) + " BTC/day · net of " +
-      cfg.poolFeePct + "% pool fee";
+    $("kpiDailyBtc").textContent   = fmtBtc(t.dailyBtc) + " BTC/day · " +
+      t.th.toLocaleString("en-US") + " TH/s net of pool fees";
     $("kpiMonthlyUsd").textContent = fmtUsd(monthlyUsd);
 
     // Recoupment hero + dual-color bar
     $("heroPct").textContent = pct.toFixed(1) + "%";
     $("heroCaption").textContent =
-      "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(gross);
-    $("segTax").style.width     = Math.min(100, tax / gross * 100) + "%";
-    $("segAccrued").style.width = Math.max(0, Math.min(100 - tax / gross * 100,
-                                           estAccrued / gross * 100)) + "%";
+      "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(t.gross);
+    const taxPct = t.gross > 0 ? Math.min(100, t.tax / t.gross * 100) : 0;
+    $("segTax").style.width     = taxPct + "%";
+    $("segAccrued").style.width = Math.max(0, Math.min(100 - taxPct,
+      t.gross > 0 ? t.estUsd / t.gross * 100 : 0)) + "%";
     $("recoupBar").setAttribute("aria-label",
-      "Recoupment: tax savings " + fmtUsd(tax) + ", estimated income " + fmtUsd(estAccrued) +
-      ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(gross));
-    $("legendAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued);
+      "Recoupment: tax savings " + fmtUsd(t.tax) + ", mining income " + fmtUsd(t.estUsd) +
+      " (" + fmtUsd(t.estAfter) + " after tax), remaining " + fmtUsd(remaining) +
+      " of " + fmtUsd(t.gross));
+    $("legendAccrued").textContent = fmtBtc(t.estBtc) + " BTC · " + fmtUsd(t.estUsd) +
+      " (" + fmtUsd(t.estAfter) + " after tax)";
     $("legendRemaining").textContent = fmtUsd(remaining);
+
+    // On-chain card — the wallet receives payouts from every contract, so it
+    // is always compared against the all-contracts estimate.
+    document.body.classList.toggle("has-wallet", walletAddresses.length > 0);
     const showOnchain = walletAddresses.length > 0 && walletBtc !== null;
-    $("legendOnchain").hidden = !showOnchain;
+    $("legendOnchain").hidden = !(showOnchain && !sel);
     if (showOnchain)
       $("legendOnchainVal").textContent = fmtBtc(walletBtc) + " BTC · " + fmtUsd(walletBtc * price);
-
-    // On-chain KPI card
-    document.body.classList.toggle("has-wallet", walletAddresses.length > 0);
     if (walletAddresses.length > 0) {
       const n = walletAddresses.length + (walletAddresses.length === 1 ? " address" : " addresses");
       if (walletBtc !== null) {
         $("kpiMinedBtc").textContent = fmtBtc(walletBtc) + " BTC";
         $("kpiMinedDetail").textContent = fmtUsd(walletBtc * price) + " · vs " +
-          fmtUsd(estAccrued) + " est. · " + n +
+          fmtUsd(allT.estUsd) + " est. (all contracts) · " + n +
           (walletLive ? "" : " · offline, last known");
       } else {
         $("kpiMinedBtc").textContent = "—";
@@ -641,21 +855,113 @@
       }
     }
 
-    // Details table (computed rows; editable rows are populated from cfg)
-    $("tblHashrate").textContent   = totalTh().toLocaleString("en-US") + " TH/s";
-    $("tblTaxSavings").textContent = fmtUsd(tax);
-    $("tblNetCapital").textContent = fmtUsd(gross - tax);
-    $("tblDays").textContent      = Math.floor(days).toLocaleString("en-US");
-    $("tblAccrued").textContent   = fmtBtc(estBtc) + " BTC · " + fmtUsd(estAccrued);
-    $("rowActual").hidden         = walletBtc === null;
-    if (walletBtc !== null)
-      $("tblActual").textContent  = fmtBtc(walletBtc) + " BTC · " + fmtUsd(walletBtc * price);
-    $("tblRecovered").textContent = fmtUsd(recovered);
-    $("tblRemaining").textContent = fmtUsd(remaining);
+    // Details: editable single-contract table, or the all-contracts comparison
+    $("cfgSingleView").hidden = !sel;
+    $("cfgAllView").hidden    = !!sel;
+    if (sel) {
+      const sDaily = cDailyBtc(sel, diff), sDays = cDays(sel);
+      const sBtc = sDaily * sDays, sUsd = sBtc * price;
+      const sAfter = sUsd * (1 - sel.miningTaxPct / 100), sTax = cTax(sel);
+      $("tblHashrate").textContent   = cTh(sel).toLocaleString("en-US") + " TH/s";
+      $("tblTaxSavings").textContent = fmtUsd(sTax);
+      $("tblNetCapital").textContent = fmtUsd(sel.grossCapital - sTax);
+      $("tblDays").textContent       = cLive(sel)
+        ? Math.floor(sDays).toLocaleString("en-US") : "not yet activated";
+      $("tblAccrued").textContent    = fmtBtc(sBtc) + " BTC · " + fmtUsd(sUsd);
+      $("tblMiningTaxLabel").textContent =
+        "Ordinary income tax if unsheltered (" + sel.miningTaxPct + "%)";
+      $("tblMiningTax").textContent  = "−" + fmtUsd(sUsd - sAfter);
+      $("tblAfterTax").textContent   = fmtUsd(sAfter);
+      $("rowActual").hidden          = true;   // wallet totals are fleet-wide
+      $("tblRecovered").textContent  = fmtUsd(sTax + sUsd);
+      $("tblRemaining").textContent  = fmtUsd(Math.max(0, sel.grossCapital - sTax - sUsd));
+    } else {
+      renderComparison(price, diff);
+    }
+
+    renderTaxLedger(t);
 
     // Status line
-    $("daysElapsed").textContent = "Day " + Math.floor(days) + " of contract";
+    $("daysElapsed").textContent = t.cs.some(cLive)
+      ? "Day " + Math.floor(days) + (sel ? " of contract" : " since first activation")
+      : "Awaiting activation";
     renderSimulator();
+  }
+
+  // ── All-contracts comparison table ────────────────────────────────────
+  function renderComparison(price, diff) {
+    const body = $("cmpBody"), foot = $("cmpFoot");
+    body.textContent = ""; foot.textContent = "";
+    const tot = { rigs: 0, th: 0, gross: 0, tax: 0, usd: 0 };
+    for (const c of contracts) {
+      const d = cDays(c), usd = cDailyBtc(c, diff) * price * d, tx = cTax(c);
+      const tr = document.createElement("tr");
+      [c.machines + " × " + c.minerModel,
+       String(c.machines),
+       cTh(c).toLocaleString("en-US") + " TH/s",
+       cStart(c).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+       cLive(c) ? Math.floor(d).toLocaleString("en-US") : "pending",
+       fmtUsd(c.grossCapital), fmtUsd(tx), fmtUsd(usd), fmtUsd(tx + usd),
+      ].forEach((txt, i) => {
+        const el = document.createElement(i === 0 ? "th" : "td");
+        el.textContent = txt;
+        if (i === 4 && !cLive(c)) el.className = "cmp-pending";
+        tr.append(el);
+      });
+      body.append(tr);
+      tot.rigs += c.machines; tot.th += cTh(c); tot.gross += c.grossCapital;
+      tot.tax += tx; tot.usd += usd;
+    }
+    const tr = document.createElement("tr");
+    [["th", "Total"], ["td", String(tot.rigs)], ["td", tot.th.toLocaleString("en-US") + " TH/s"],
+     ["td", ""], ["td", ""], ["td", fmtUsd(tot.gross)], ["td", fmtUsd(tot.tax)],
+     ["td", fmtUsd(tot.usd)], ["td", fmtUsd(tot.tax + tot.usd)],
+    ].forEach(([tag, txt]) => {
+      const el = document.createElement(tag); el.textContent = txt; tr.append(el);
+    });
+    foot.append(tr);
+  }
+
+  // ── Multi-year tax ledger (projection at today's price & difficulty) ──
+  // Deductions are summed across the contracts in view; each contract keeps
+  // its own bracket and mining-income tax rate.
+  function renderTaxLedger(t) {
+    const deductions = [0, 0, 0, 0], benefits = [0, 0, 0, 0];
+    for (const c of t.cs) {
+      const b = c.taxBracketPct / 100;
+      const ds = [c.grossCapital * (c.depreciationPct / 100), c.depYr2, c.depYr3, c.depYr4];
+      for (let i = 0; i < 4; i++) { deductions[i] += ds[i]; benefits[i] += ds[i] * b; }
+    }
+    const setCell = (k, yr, txt, cls) => {
+      const el = document.querySelector('[data-cell="' + k + '"][data-yr="' + yr + '"]');
+      if (el) { el.textContent = txt; el.className = "num" + (cls ? " " + cls : ""); }
+    };
+
+    const M = t.annualUsd, mt = t.annualTax, A = M - mt;
+    let tD = 0, tB = 0, tM = 0, tMt = 0, tA = 0;
+    for (let i = 0; i < 4; i++) {
+      const yr = i + 1, D = deductions[i], B = benefits[i];
+      setCell("D", yr, fmtUsd(D));
+      setCell("B", yr, B ? "+" + fmtUsd(B) : "—", B ? "tax-benefit" : "");
+      setCell("M", yr, fmtUsd(M));
+      setCell("Mt", yr, mt ? "−" + fmtUsd(mt) : "—", mt ? "tax-owed" : "");
+      setCell("A", yr, fmtUsd(A));
+      tD += D; tB += B; tM += M; tMt += mt; tA += A;
+    }
+    setCell("D", "tot", fmtUsd(tD));
+    setCell("B", "tot", "+" + fmtUsd(tB), "tax-benefit");
+    setCell("M", "tot", fmtUsd(tM));
+    setCell("Mt", "tot", "−" + fmtUsd(tMt), "tax-owed");
+    setCell("A", "tot", fmtUsd(tA));
+
+    const totalPre = tB + tM, totalAfter = tB + tA;
+    const covers = totalPre >= t.gross;
+    $("ledgerSummary").innerHTML =
+      "Projected 4-year recoupment (tax benefits + mining income): <strong>" +
+      fmtUsd(totalPre) + "</strong> vs " + fmtUsd(t.gross) + " gross capital — " +
+      (covers ? "fully recovered within the contract"
+              : fmtUsd(t.gross - totalPre) + " short at today's price & difficulty") +
+      ". If mining income is fully taxed and unsheltered: " + fmtUsd(totalAfter) + ".";
   }
 
   // ── Bull market simulator ─────────────────────────────────────────────
@@ -675,14 +981,13 @@
       return;
     }
     const diff       = difficulty ?? FALLBACK_DIFFICULTY;
-    const dailyBtc   = netDailyBtc(diff);
-    const simDaily   = dailyBtc * simPrice;
+    const livePrice  = btcPrice ?? FALLBACK_PRICE;
+    const t          = viewTotals(livePrice, diff);
+    const simDaily   = t.dailyBtc * simPrice;
     const simMonthly = simDaily * DAYS_PER_MONTH;
 
-    const livePrice  = btcPrice ?? FALLBACK_PRICE;
-    const accrued    = dailyBtc * livePrice * daysElapsed();
-    const remaining  = Math.max(0, cfg.grossCapital - taxSavings() - accrued);
-    const months     = remaining / simMonthly;
+    const remaining  = Math.max(0, t.gross - t.tax - t.estUsd);
+    const months     = simMonthly > 0 ? remaining / simMonthly : Infinity;
 
     $("simMonthly").textContent = fmtUsd(simMonthly);
     $("simDaily").textContent   = fmtUsd(simDaily, 2) + "/day at " + fmtUsd(simPrice) + " per BTC";
@@ -690,7 +995,7 @@
       $("simMonths").textContent = "Broke even";
       $("simMonthsDetail").textContent = "Gross capital already fully recovered";
     } else {
-      $("simMonths").textContent = months.toFixed(1) + " mo";
+      $("simMonths").textContent = Number.isFinite(months) ? months.toFixed(1) + " mo" : "—";
       $("simMonthsDetail").textContent =
         fmtUsd(remaining) + " still to recover after tax savings + income to date";
     }
@@ -814,53 +1119,107 @@
   $("addrInput").addEventListener("keydown", e => { if (e.key === "Enter") addAddress(); });
 
   // ── Contract config (inline-editable table rows) ─────────────────────
-  const cfgInputs = document.querySelectorAll(".detail-table input[data-key]");
+  // data-key  → a field on the currently selected contract
+  // data-gkey → a network-wide setting shared by every contract
+  const cfgInputs    = document.querySelectorAll("#detailsPanel input[data-key]");
+  const globalInputs = document.querySelectorAll("#detailsPanel input[data-gkey]");
 
   function saveCfg() {
-    try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) {}
+    try {
+      localStorage.setItem(CONTRACTS_KEY, JSON.stringify(contracts));
+      localStorage.setItem(GLOBAL_KEY, JSON.stringify(gcfg));
+    } catch (e) {}
   }
 
   function populateCfgForm() {
-    cfgInputs.forEach(inp => {
-      const v = cfg[inp.dataset.key];
+    const c = selectedContract();
+    if (c) cfgInputs.forEach(inp => {
+      const v = c[inp.dataset.key];
       inp.value = inp.dataset.fmt === "usd" ? Number(v).toLocaleString("en-US") : v;
     });
+    globalInputs.forEach(inp => { inp.value = gcfg[inp.dataset.gkey]; });
+  }
+
+  // Shared validation: returns the parsed value, or null to reject the edit.
+  function parseField(inp, key) {
+    if (inp.dataset.fmt === "usd") {
+      const v = parseFloat(inp.value.replace(/[^0-9.]/g, ""));
+      if (!Number.isFinite(v) || v < parseFloat(inp.dataset.min || "0")) return null;
+      return Math.round(v);
+    }
+    if (inp.type === "number") {
+      const v = parseFloat(inp.value);
+      const min = inp.min !== "" ? parseFloat(inp.min) : -Infinity;
+      const max = inp.max !== "" ? parseFloat(inp.max) : Infinity;
+      if (!Number.isFinite(v) || v < min || v > max) return null;
+      return key === "machines" ? Math.round(v) : v;
+    }
+    if (inp.type === "date")
+      return /^\d{4}-\d{2}-\d{2}$/.test(inp.value) ? inp.value : null;
+    const v = inp.value.trim();
+    return v || null;
   }
 
   cfgInputs.forEach(inp => {
     inp.addEventListener("change", () => {
+      const c = selectedContract();
+      if (!c) return;
       const key = inp.dataset.key;
-      let v;
-      if (inp.dataset.fmt === "usd") {
-        v = parseFloat(inp.value.replace(/[^0-9.]/g, ""));
-        if (!Number.isFinite(v) || v < parseFloat(inp.dataset.min || "0")) { populateCfgForm(); return; }
-        v = Math.round(v);
-      } else if (inp.type === "number") {
-        v = parseFloat(inp.value);
-        const min = inp.min !== "" ? parseFloat(inp.min) : -Infinity;
-        const max = inp.max !== "" ? parseFloat(inp.max) : Infinity;
-        if (!Number.isFinite(v) || v < min || v > max) { populateCfgForm(); return; }
-        if (key === "machines") v = Math.round(v);
-      } else if (inp.type === "date") {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(inp.value)) { populateCfgForm(); return; }
-        v = inp.value;
-      } else {
-        v = inp.value.trim();
-        if (!v) { populateCfgForm(); return; }
-      }
-      cfg[key] = v;
-      saveCfg();
-      populateCfgForm();
-      render();
+      const v = parseField(inp, key);
+      if (v === null) { populateCfgForm(); return; }
+      c[key] = v;
+      if (key === "minerModel") c.label = deriveLabel(v);
+      saveCfg(); populateCfgForm(); renderPills(); render();
+    });
+  });
+
+  globalInputs.forEach(inp => {
+    inp.addEventListener("change", () => {
+      const v = parseField(inp, inp.dataset.gkey);
+      if (v === null) { populateCfgForm(); return; }
+      gcfg[inp.dataset.gkey] = v;
+      saveCfg(); populateCfgForm(); render();
     });
   });
 
   $("cfgReset").addEventListener("click", () => {
-    cfg = { ...DEFAULT_CFG };
-    try { localStorage.removeItem(CFG_KEY); } catch (e) {}
-    populateCfgForm();
-    render();
+    const keep = gcfg.selected;
+    contracts = DEFAULT_CONTRACTS.map(c => ({ ...c }));
+    gcfg = { ...DEFAULT_GLOBAL, selected: contracts.some(c => c.id === keep) ? keep : "all" };
+    try {
+      localStorage.removeItem(CONTRACTS_KEY);
+      localStorage.removeItem(GLOBAL_KEY);
+      localStorage.removeItem(CFG_KEY);
+    } catch (e) {}
+    populateCfgForm(); renderPills(); render();
   });
+
+  // ── Fleet selector pills (All + one per contract) ─────────────────────
+  function renderPills() {
+    const box = $("fleetPills");
+    box.textContent = "";
+    const add = (id, label, sub) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.sel = id;
+      b.append(document.createTextNode(label));
+      if (sub) {
+        const s = document.createElement("span");
+        s.className = "pill-sub"; s.textContent = sub;
+        b.append(s);
+      }
+      if (gcfg.selected === id) { b.classList.add("active"); b.setAttribute("aria-pressed", "true"); }
+      b.addEventListener("click", () => {
+        gcfg.selected = id;
+        saveCfg();
+        delete chartCache.start;   // "since start" depends on the selection
+        renderPills(); populateCfgForm(); render(); loadChart();
+      });
+      box.append(b);
+    };
+    add("all", "All", contracts.reduce((n, c) => n + cTh(c), 0).toLocaleString("en-US") + " TH/s");
+    contracts.forEach(c => add(c.id, c.label, cTh(c).toLocaleString("en-US") + " TH/s"));
+  }
 
   // ── Price history chart ───────────────────────────────────────────────
   const CHART_TTL = 5 * 60 * 1000;   // refetch a range at most every 5 min
@@ -906,7 +1265,7 @@
     try {
       let pts = await fetchHistory(chartRange);
       if (chartRange === "start") {
-        const t0 = inServiceDate().getTime();
+        const t0 = viewStart().getTime();
         const cut = pts.filter(pt => pt.t >= t0);
         if (cut.length >= 2) pts = cut;
       }
@@ -1074,6 +1433,7 @@
   }
 
   renderAddrList();
+  renderPills();
   populateCfgForm();
   render();          // first paint with fallbacks — no blank flash
   refresh();
