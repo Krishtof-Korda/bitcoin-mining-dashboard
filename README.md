@@ -21,8 +21,10 @@ Download it, open it in a browser, and it works.
   exact price and date.
 - **Capital recoupment bar** — visualizes progress toward recovering your gross capital:
   a fixed block for Year-1 tax savings stacked with income accrued since your start date.
-- **Bull market simulator** — type any hypothetical BTC price and instantly see projected
-  monthly income and months to break even. The projection steps month by month and accounts
+- **Bull market simulator** — opens at the **break-even price**: what BTC has to reach for the
+  contracts to recoup gross capital exactly as the prepaid term ends (solved in closed form, since
+  mining income scales linearly with price). Type any price to explore, or hit **Break-even** to
+  snap back. The projection steps month by month and accounts
   for the **next halving** (dated from the live block height), an assumed annual difficulty
   drift, and each contract's remaining prepaid term — so it flags when a contract will not
   break even before hosting runs out.
