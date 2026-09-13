@@ -214,6 +214,20 @@
     padding: 5px 13px; cursor: pointer; transition: border-color .15s, color .15s;
   }
   .sim-presets button:hover { border-color: var(--accent); color: var(--text-primary); }
+  .sim-assume { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .sim-assume label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; line-height: 1.3; }
+  .sim-assume input {
+    width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--page);
+    color: var(--text-primary); font: inherit; font-size: 14px; font-weight: 600;
+    font-variant-numeric: tabular-nums; padding: 7px 10px; outline: 0;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .sim-assume input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .sim-assume input::-webkit-outer-spin-button,
+  .sim-assume input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .sim-assume input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+  .sim-warn { color: var(--critical); font-weight: 600; }
   .sim-out { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
   .sim-stat { background: var(--chip); border-radius: 12px; padding: 14px 18px; }
   .sim-stat .label { font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
@@ -437,7 +451,8 @@
   <!-- Bull market simulator -->
   <section class="panel">
     <h2>Bull market simulator</h2>
-    <div class="panel-sub">Type a hypothetical BTC price — projections update instantly at live network difficulty.</div>
+    <div class="panel-sub">Type a hypothetical BTC price — the projection steps month by month and
+      accounts for the next halving, your assumed difficulty drift, and each contract's remaining term.</div>
 
     <div class="sim-grid">
       <div class="sim-input">
@@ -451,6 +466,16 @@
           <button type="button" data-price="150000">$150K</button>
           <button type="button" data-price="250000">$250K</button>
           <button type="button" data-price="500000">$500K</button>
+        </div>
+        <div class="sim-assume">
+          <div>
+            <label for="cfgDrift">Difficulty drift %/yr</label>
+            <input id="cfgDrift" data-gkey="diffDriftPct" type="number" min="-50" max="200" step="1" aria-label="Annual difficulty drift percent">
+          </div>
+          <div>
+            <label for="cfgNudge">Post-halving nudge %</label>
+            <input id="cfgNudge" data-gkey="halvingNudgePct" type="number" min="-90" max="100" step="1" aria-label="Post-halving difficulty change percent">
+          </div>
         </div>
       </div>
       <div class="sim-out">
@@ -521,6 +546,7 @@
           <tr><th>Year 3 deductions (USD, from your K-1)</th><td class="num"><input id="cfgDep3" data-key="depYr3" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 3 deductions in US dollars"></td></tr>
           <tr><th>Year 4 deductions (USD, from your K-1)</th><td class="num"><input id="cfgDep4" data-key="depYr4" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 4 deductions in US dollars"></td></tr>
           <tr><th>In-service date</th><td class="num"><input id="cfgDate" data-key="startDate" type="date" aria-label="In-service date"></td></tr>
+          <tr><th>Contract term (months of prepaid hosting)</th><td class="num"><input id="cfgTerm" data-key="termMonths" type="number" min="1" max="240" step="1" aria-label="Contract term in months"></td></tr>
           <tr><th>Days in service</th><td class="num" id="tblDays">—</td></tr>
           <tr><th>Estimated income to date, pre-tax (daily yield × days elapsed)</th><td class="num" id="tblAccrued">—</td></tr>
           <tr><th id="tblMiningTaxLabel">Ordinary income tax on mined BTC</th><td class="num tax-owed" id="tblMiningTax">—</td></tr>
@@ -530,10 +556,11 @@
           <tr><th>Remaining to break even on gross capital</th><td class="num" id="tblRemaining">—</td></tr>
         </tbody>
       </table>
+      </div>
+
       <div class="cfg-actions">
         <button type="button" id="cfgReset">Reset all contracts to defaults</button>
         <span class="cfg-note" id="cfgTaxNote"></span>
-      </div>
       </div>
 
       <div class="details-h">Network</div>
@@ -547,9 +574,10 @@
       <p class="wallet-note">
         Mined BTC is ordinary income when mined — but <strong>depreciation and energy deductions can
         shelter it</strong>, so recoupment counts mining income pre-tax, with the after-tax figure shown
-        alongside as a conservative reference. This ledger projects all 48 months
-        <strong>at today's price and difficulty</strong> — a steady-state baseline; it does not yet model
-        price growth, difficulty drift, or the 2028 halving. With <strong>All</strong> selected it sums every
+        alongside as a conservative reference. This ledger projects all 48 months at today's price, stepping
+        month by month so the <strong>next halving</strong> and your assumed <strong>difficulty drift</strong>
+        (both set in the simulator) land in the right contract year — which is why later years earn less.
+        It still assumes a flat BTC price. With <strong>All</strong> selected it sums every
         contract; pick one contract to see and edit just that deal. Enter your years 2–4 deductions
         (continuing depreciation + energy amortization) from your K-1 in the contract table above;
         year 1 is derived from the depreciation percentage. The
@@ -636,6 +664,11 @@
         <a href="https://mempool.space" rel="noopener">mempool.space</a> as fallback — read-only lookups of public addresses.
         Recoupment counts mined BTC pre-tax, with the after-tax figure shown as a conservative reference;
         depreciation and energy deductions can shelter the mining income (see the tax model above).
+        Forward projections step month by month: the block reward halves every 210,000 blocks (the date is
+        derived from the live block height at ~10&nbsp;min/block, falling back to an estimate if that call
+        fails), difficulty compounds at your assumed drift, and each contract stops earning when its
+        prepaid hosting term ends. If payback lands past that term, the months shown assume mining
+        continues anyway, flagged in red, with the shortfall at term end alongside.
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
       </p>
     </div>
@@ -664,7 +697,7 @@
       taxBracketPct: 42,     // high-earner bracket (deductions offset other income)
       miningTaxPct: 42,      // ordinary income tax on mined BTC at receipt
       depYr2: 0, depYr3: 0, depYr4: 0,   // years 2–4 deductions — fill from your K-1
-      startDate: "2026-06-25",
+      startDate: "2026-06-25", termMonths: 48,
     },
     {
       id: "s21xp", label: "S21 XP",
@@ -672,10 +705,15 @@
       grossCapital: 99000, prepaidPower: 39600, poolFeePct: 2,
       depreciationPct: 70, taxBracketPct: 42, miningTaxPct: 42,
       depYr2: 0, depYr3: 0, depYr4: 0,
-      startDate: "2026-09-01",
+      startDate: "2026-09-01", termMonths: 48,
     },
   ];
-  const DEFAULT_GLOBAL = { blockReward: 3.125, selected: "all" };
+  const DEFAULT_GLOBAL = {
+    blockReward: 3.125,
+    diffDriftPct: 15,       // assumed annual network difficulty growth
+    halvingNudgePct: -5,    // one-off difficulty level shift at the halving
+    selected: "all",
+  };
 
   // Short label for the selector pills, derived from the miner model.
   const deriveLabel = model => {
@@ -713,6 +751,36 @@
     ((cTh(c) * Math.pow(10, 12) * 86400 * gcfg.blockReward) / (diff * Math.pow(2, 32)))
       * (1 - c.poolFeePct / 100);
 
+  const cMonthsIn   = c => cDays(c) / DAYS_PER_MONTH;
+  const cMonthsLeft  = c => Math.max(0, c.termMonths - cMonthsIn(c));
+
+  // ── Halving schedule ──────────────────────────────────────────────────
+  // Rewards halve every 210,000 blocks. The date is derived from the live
+  // block height at ~10 min/block, so it stays accurate without hardcoding.
+  const HALVING_INTERVAL = 210000;
+  const FALLBACK_HALVING = Date.parse("2028-04-20T00:00:00Z");
+
+  function halvingInfo() {
+    if (blockHeight === null)
+      return { estimated: true, dateMs: FALLBACK_HALVING, blocks: null, block: null };
+    const block  = Math.ceil((blockHeight + 1) / HALVING_INTERVAL) * HALVING_INTERVAL;
+    const blocks = block - blockHeight;
+    return { estimated: false, dateMs: Date.now() + blocks * 10 * 60000, blocks, block };
+  }
+
+  // Multiplier on today's income for a given future date: difficulty drift
+  // compounds against you, the halving cuts the reward in half, and the
+  // post-halving nudge is a one-off difficulty level shift.
+  function incomeMult(dateMs) {
+    const yrs = Math.max(0, (dateMs - Date.now()) / 31557600000);
+    let m = Math.pow(1 + gcfg.diffDriftPct / 100, -yrs);
+    if (dateMs >= halvingInfo().dateMs) {
+      m *= 0.5;
+      m /= (1 + gcfg.halvingNudgePct / 100);
+    }
+    return m;
+  }
+
   // Contracts currently in view: all of them, or just the selected one.
   const viewContracts   = () => gcfg.selected === "all"
     ? contracts : contracts.filter(c => c.id === gcfg.selected);
@@ -729,6 +797,7 @@
   let btcPrice   = null;
   let difficulty = null;
   let priceLive = false, diffLive = false;
+  let blockHeight = null;   // drives the halving schedule
 
   // ── Wallet state (addresses live in localStorage only — never in code) ─
   const WALLET_KEY = "btc-dashboard-wallet-addresses";
@@ -748,18 +817,17 @@
   // Each contract has its own hashrate, pool fee and start date, so income
   // is computed per contract and summed — never from a blended average.
   function totalsFor(cs, price, diff) {
-    const t = { cs, rigs: 0, th: 0, gross: 0, tax: 0, prepaid: 0,
-                dailyBtc: 0, estBtc: 0, estUsd: 0, estAfter: 0, annualUsd: 0, annualTax: 0 };
+    const t = { cs, per: [], rigs: 0, th: 0, gross: 0, tax: 0, prepaid: 0,
+                dailyBtc: 0, estBtc: 0, estUsd: 0, estAfter: 0 };
     for (const c of cs) {
       const dB = cDailyBtc(c, diff), d = cDays(c);
+      t.per.push({ c, dailyBtc: dB });
       t.rigs += c.machines; t.th += cTh(c);
       t.gross += c.grossCapital; t.tax += cTax(c); t.prepaid += c.prepaidPower;
       if (cLive(c)) t.dailyBtc += dB;          // not-yet-activated rigs earn nothing today
       t.estBtc   += dB * d;
       t.estUsd   += dB * price * d;
       t.estAfter += dB * price * d * (1 - c.miningTaxPct / 100);
-      t.annualUsd += dB * price * 365.25;      // steady-state full-year run-rate
-      t.annualTax += dB * price * 365.25 * (c.miningTaxPct / 100);
     }
     return t;
   }
@@ -879,7 +947,7 @@
       renderComparison(price, diff);
     }
 
-    renderTaxLedger(t);
+    renderTaxLedger(t, price);
 
     // Status line
     $("daysElapsed").textContent = t.cs.some(cLive)
@@ -922,25 +990,39 @@
     foot.append(tr);
   }
 
-  // ── Multi-year tax ledger (projection at today's price & difficulty) ──
-  // Deductions are summed across the contracts in view; each contract keeps
-  // its own bracket and mining-income tax rate.
-  function renderTaxLedger(t) {
+  // ── Multi-year tax ledger (48-month projection) ───────────────────────
+  // Income is stepped month by month so the halving and difficulty drift
+  // land in the right contract year; deductions sum across the view.
+  function renderTaxLedger(t, price) {
     const deductions = [0, 0, 0, 0], benefits = [0, 0, 0, 0];
-    for (const c of t.cs) {
-      const b = c.taxBracketPct / 100;
+    const income = [0, 0, 0, 0], mtaxes = [0, 0, 0, 0];
+
+    for (const { c, dailyBtc } of t.per) {
+      const bracket = c.taxBracketPct / 100, mRate = c.miningTaxPct / 100;
       const ds = [c.grossCapital * (c.depreciationPct / 100), c.depYr2, c.depYr3, c.depYr4];
-      for (let i = 0; i < 4; i++) { deductions[i] += ds[i]; benefits[i] += ds[i] * b; }
+      const startMs = cStart(c).getTime();
+      for (let i = 0; i < 4; i++) {
+        deductions[i] += ds[i];
+        benefits[i]   += ds[i] * bracket;
+        let yr = 0;
+        for (let k = 0; k < 12; k++) {
+          const when = startMs + ((i * 12 + k) + 0.5) * DAYS_PER_MONTH * 86400000;
+          yr += dailyBtc * price * DAYS_PER_MONTH * incomeMult(when);
+        }
+        income[i]  += yr;
+        mtaxes[i]  += yr * mRate;
+      }
     }
+
     const setCell = (k, yr, txt, cls) => {
       const el = document.querySelector('[data-cell="' + k + '"][data-yr="' + yr + '"]');
       if (el) { el.textContent = txt; el.className = "num" + (cls ? " " + cls : ""); }
     };
 
-    const M = t.annualUsd, mt = t.annualTax, A = M - mt;
     let tD = 0, tB = 0, tM = 0, tMt = 0, tA = 0;
     for (let i = 0; i < 4; i++) {
       const yr = i + 1, D = deductions[i], B = benefits[i];
+      const M = income[i], mt = mtaxes[i], A = M - mt;
       setCell("D", yr, fmtUsd(D));
       setCell("B", yr, B ? "+" + fmtUsd(B) : "—", B ? "tax-benefit" : "");
       setCell("M", yr, fmtUsd(M));
@@ -960,7 +1042,7 @@
       "Projected 4-year recoupment (tax benefits + mining income): <strong>" +
       fmtUsd(totalPre) + "</strong> vs " + fmtUsd(t.gross) + " gross capital — " +
       (covers ? "fully recovered within the contract"
-              : fmtUsd(t.gross - totalPre) + " short at today's price & difficulty") +
+              : fmtUsd(t.gross - totalPre) + " short over the term") +
       ". If mining income is fully taxed and unsheltered: " + fmtUsd(totalAfter) + ".";
   }
 
@@ -969,6 +1051,29 @@
     const raw = $("simPrice").value.replace(/[^0-9.]/g, "");
     const v = parseFloat(raw);
     return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  // Steps forward a month at a time, applying the halving, the assumed
+  // difficulty drift and each contract's remaining prepaid term. Hosting
+  // ends with the term, so a contract stops earning once it runs out.
+  const MAX_PROJECT_MONTHS = 600;   // 50 yrs — far enough to detect "never pays back"
+  function project(t, price, flat, ignoreTerm) {
+    const target  = t.gross;
+    const horizon = Math.ceil(Math.max(0, ...t.per.map(x => cMonthsLeft(x.c)), 0));
+    const limit   = ignoreTerm ? MAX_PROJECT_MONTHS : horizon;
+    let cum = t.tax + t.estUsd;
+    if (cum >= target) return { months: 0, done: true, horizon };
+    for (let m = 1; m <= limit; m++) {
+      const mult = flat ? 1 : incomeMult(Date.now() + m * DAYS_PER_MONTH * 86400000);
+      let monthly = 0;
+      for (const { c, dailyBtc } of t.per)
+        if (ignoreTerm || m <= cMonthsLeft(c)) monthly += dailyBtc * price * DAYS_PER_MONTH * mult;
+      if (monthly <= 0) continue;
+      if (cum + monthly >= target)
+        return { months: m - 1 + (target - cum) / monthly, done: true, horizon };
+      cum += monthly;
+    }
+    return { months: null, done: false, horizon, shortfall: target - cum };
   }
 
   function renderSimulator() {
@@ -980,24 +1085,48 @@
       $("simMonthsDetail").textContent = "";
       return;
     }
-    const diff       = difficulty ?? FALLBACK_DIFFICULTY;
-    const livePrice  = btcPrice ?? FALLBACK_PRICE;
-    const t          = viewTotals(livePrice, diff);
+    const diff      = difficulty ?? FALLBACK_DIFFICULTY;
+    const livePrice = btcPrice ?? FALLBACK_PRICE;
+    const t         = viewTotals(livePrice, diff);
+
     const simDaily   = t.dailyBtc * simPrice;
     const simMonthly = simDaily * DAYS_PER_MONTH;
-
-    const remaining  = Math.max(0, t.gross - t.tax - t.estUsd);
-    const months     = simMonthly > 0 ? remaining / simMonthly : Infinity;
-
     $("simMonthly").textContent = fmtUsd(simMonthly);
-    $("simDaily").textContent   = fmtUsd(simDaily, 2) + "/day at " + fmtUsd(simPrice) + " per BTC";
-    if (remaining === 0) {
+    $("simDaily").textContent   = fmtUsd(simDaily, 2) + "/day at " + fmtUsd(simPrice) +
+      " per BTC, at today's reward";
+
+    const hv       = halvingInfo();
+    const hvMonths = Math.max(0, (hv.dateMs - Date.now()) / (DAYS_PER_MONTH * 86400000));
+    const hvNote   = "halving to " + (gcfg.blockReward / 2) + " BTC in ~" +
+      hvMonths.toFixed(0) + " mo (" +
+      new Date(hv.dateMs).toLocaleDateString("en-US", { month: "short", year: "numeric" }) +
+      (hv.estimated ? ", est." : "") + ") · " + gcfg.diffDriftPct + "%/yr drift";
+
+    const real = project(t, simPrice, false);
+
+    if (real.months === 0) {
       $("simMonths").textContent = "Broke even";
       $("simMonthsDetail").textContent = "Gross capital already fully recovered";
-    } else {
-      $("simMonths").textContent = Number.isFinite(months) ? months.toFixed(1) + " mo" : "—";
+    } else if (real.done) {
+      const flat = project(t, simPrice, true);
+      $("simMonths").textContent = real.months.toFixed(1) + " mo";
       $("simMonthsDetail").textContent =
-        fmtUsd(remaining) + " still to recover after tax savings + income to date";
+        (flat.done ? "vs " + flat.months.toFixed(1) + " mo flat · " : "") + hvNote;
+    } else {
+      // Past the prepaid term hosting stops, so keep projecting on the
+      // assumption mining continues — the month figure is still the most
+      // useful number, just flagged as beyond the contract.
+      const beyond = project(t, simPrice, false, true);
+      const flat   = project(t, simPrice, true,  true);
+      $("simMonths").innerHTML = beyond.done
+        ? '<span class="sim-warn">' + beyond.months.toFixed(1) + " mo</span>"
+        : '<span class="sim-warn">Never</span>';
+      $("simMonthsDetail").textContent =
+        (flat.done ? "vs " + flat.months.toFixed(1) + " mo flat · " : "") +
+        (beyond.done
+          ? "past the " + real.horizon + "-mo prepaid term (assumes mining continues), "
+          : "income decays below the balance at this price — ") +
+        fmtUsd(real.shortfall) + " short when hosting ends · " + hvNote;
     }
   }
 
@@ -1031,6 +1160,15 @@
     if (!res.ok) throw new Error("Blockchain.info " + res.status);
     const v = parseFloat(await res.text());
     if (!Number.isFinite(v) || v <= 0) throw new Error("Blockchain.info: bad payload");
+    return v;
+  }
+
+  async function fetchBlockHeight() {
+    const res = await fetch("https://blockchain.info/q/getblockcount?cors=true",
+      { cache: "no-store" });
+    if (!res.ok) throw new Error("Blockchain.info height " + res.status);
+    const v = parseInt((await res.text()).trim(), 10);
+    if (!Number.isFinite(v) || v <= 0) throw new Error("Blockchain.info: bad height");
     return v;
   }
 
@@ -1122,7 +1260,7 @@
   // data-key  → a field on the currently selected contract
   // data-gkey → a network-wide setting shared by every contract
   const cfgInputs    = document.querySelectorAll("#detailsPanel input[data-key]");
-  const globalInputs = document.querySelectorAll("#detailsPanel input[data-gkey]");
+  const globalInputs = document.querySelectorAll("input[data-gkey]");
 
   function saveCfg() {
     try {
@@ -1423,9 +1561,11 @@
 
   async function refresh() {
     document.body.classList.add("refetching");
-    const [p, d] = await Promise.allSettled([fetchPrice(), fetchDifficulty(), refreshWallet()]);
+    const [p, d, , h] = await Promise.allSettled(
+      [fetchPrice(), fetchDifficulty(), refreshWallet(), fetchBlockHeight()]);
     if (p.status === "fulfilled") { btcPrice = p.value; priceLive = true; } else { priceLive = false; }
     if (d.status === "fulfilled") { difficulty = d.value; diffLive = true; } else { diffLive = false; }
+    if (h.status === "fulfilled") blockHeight = h.value;   // falls back to an estimated date
     setStatus();
     render();
     loadChart();

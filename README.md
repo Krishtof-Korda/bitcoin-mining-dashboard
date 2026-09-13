@@ -22,7 +22,10 @@ Download it, open it in a browser, and it works.
 - **Capital recoupment bar** — visualizes progress toward recovering your gross capital:
   a fixed block for Year-1 tax savings stacked with income accrued since your start date.
 - **Bull market simulator** — type any hypothetical BTC price and instantly see projected
-  monthly income and months remaining to break even.
+  monthly income and months to break even. The projection steps month by month and accounts
+  for the **next halving** (dated from the live block height), an assumed annual difficulty
+  drift, and each contract's remaining prepaid term — so it flags when a contract will not
+  break even before hosting runs out.
 - **Wallet tracking (optional)** — paste your pool's payout address to see the actual BTC
   received on-chain alongside the estimate. Read-only: an address can never spend funds.
 - **Multiple contracts** — run several hardware deals side by side (each with its own
@@ -81,7 +84,9 @@ dailyBTC = fleetTH/s × 10¹² × 86,400 s × blockReward
                      difficulty × 2³²
 ```
 
-Monthly income is the daily run-rate × 30.44 (average days per month). Year-1 tax
+Monthly income is the daily run-rate × 30.44 (average days per month). Forward projections
+step month by month, halving the block reward every 210,000 blocks and compounding your
+assumed difficulty drift, and stop when each contract's prepaid term ends. Year-1 tax
 savings = gross capital × depreciation % × tax bracket %. The recoupment bar measures
 (tax savings + income to date) against gross capital.
 
@@ -97,6 +102,7 @@ difficulty adjustments (roughly every two weeks). Nothing here is financial or t
 | Price history ≤ 1 year | CoinGecko market chart API | 5 min cache per range |
 | Price history > 1 year | Blockchain.info charts API | 5 min cache per range |
 | On-chain wallet totals | Blockchain.info, falling back to [mempool.space](https://mempool.space) | every 60 s |
+| Block height (halving date) | Blockchain.info query API | every 60 s |
 
 All endpoints are public, free, keyless, and called read-only from your browser. If your
 ad-blocker blocks one, the dashboard degrades gracefully and says so.
