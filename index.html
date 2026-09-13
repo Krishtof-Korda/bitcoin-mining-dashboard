@@ -125,6 +125,8 @@
   .seg.tax     { background: var(--series-2); }
   .seg.accrued { background: var(--series-1); }
   .seg.gap     { background: var(--surface-1); flex: 0 0 2px; }
+  /* Tax benefits committed but not yet earned — same hue, muted toward the track. */
+  .seg.scheduled { background: color-mix(in srgb, var(--series-2) 42%, var(--track)); }
   .bar-scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-top: 7px; font-variant-numeric: tabular-nums; }
 
   .legend { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
@@ -136,6 +138,7 @@
   .key .swatch.tax       { background: var(--series-2); }
   .key .swatch.accrued   { background: var(--series-1); }
   .key .swatch.onchain   { background: transparent; border: 2px solid var(--series-1); }
+  .key .swatch.scheduled { background: color-mix(in srgb, var(--series-2) 42%, var(--track)); }
   .key .swatch.remaining { background: var(--track); border: 1px solid var(--baseline); }
   .key[hidden] { display: none; }
   .key .k-label { color: var(--text-secondary); }
@@ -436,6 +439,8 @@
         <div class="seg tax" id="segTax"></div>
         <div class="seg gap"></div>
         <div class="seg accrued" id="segAccrued"></div>
+        <div class="seg gap"></div>
+        <div class="seg scheduled" id="segScheduled"></div>
       </div>
       <div class="bar-scale"><span>$0</span><span id="barMax">$206,000</span></div>
     </div>
@@ -444,6 +449,7 @@
       <div class="key"><span class="swatch tax"></span><span class="k-label">Tax savings</span><span class="k-value" id="legendTax">$60,564</span></div>
       <div class="key"><span class="swatch accrued"></span><span class="k-label">Mined to date (est.)</span><span class="k-value" id="legendAccrued">—</span></div>
       <div class="key" id="legendOnchain" hidden><span class="swatch onchain"></span><span class="k-label">On-chain received</span><span class="k-value" id="legendOnchainVal">—</span></div>
+      <div class="key" id="legendSched" hidden><span class="swatch scheduled"></span><span class="k-label">Tax savings (scheduled)</span><span class="k-value" id="legendSchedVal">—</span></div>
       <div class="key"><span class="swatch remaining"></span><span class="k-label">Remaining</span><span class="k-value" id="legendRemaining">—</span></div>
     </div>
   </section>
@@ -541,6 +547,7 @@
           <tr><th>Tax bracket (%)</th><td class="num"><input id="cfgTax" data-key="taxBracketPct" type="number" min="0" max="100" step="1" aria-label="Tax bracket percent"></td></tr>
           <tr><th>Mining income tax rate (%, ordinary income on mined BTC)</th><td class="num"><input id="cfgMiningTax" data-key="miningTaxPct" type="number" min="0" max="100" step="1" aria-label="Mining income tax rate percent"></td></tr>
           <tr><th>Year-1 tax savings (gross × depreciation × bracket)</th><td class="num" id="tblTaxSavings">$60,564</td></tr>
+          <tr><th>Scheduled tax benefits (years 2–4 not yet closed)</th><td class="num" id="tblSched">—</td></tr>
           <tr><th>True net capital invested</th><td class="num" id="tblNetCapital">$145,436</td></tr>
           <tr><th>Year 2 deductions (USD, from your K-1)</th><td class="num"><input id="cfgDep2" data-key="depYr2" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 2 deductions in US dollars"></td></tr>
           <tr><th>Year 3 deductions (USD, from your K-1)</th><td class="num"><input id="cfgDep3" data-key="depYr3" data-fmt="usd" data-min="0" type="text" inputmode="decimal" aria-label="Year 3 deductions in US dollars"></td></tr>
@@ -667,7 +674,9 @@
         Forward projections step month by month: the block reward halves every 210,000 blocks (the date is
         derived from the live block height at ~10&nbsp;min/block, falling back to an estimate if that call
         fails), difficulty compounds at your assumed drift, and each contract stops earning when its
-        prepaid hosting term ends. If payback lands past that term, the months shown assume mining
+        prepaid hosting term ends. The recoupment bar counts year-1 depreciation as banked up front
+        and shows the years 2–4 benefits as a separate muted block until each contract year
+        actually closes, at which point they move into the earned segment. If payback lands past that term, the months shown assume mining
         continues anyway, flagged in red, with the shortfall at term end alongside.
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
       </p>
@@ -747,6 +756,20 @@
   const cDays  = c => Math.max(0, (Date.now() - cStart(c).getTime()) / 86400000);
   const cLive  = c => Date.now() >= cStart(c).getTime();
   const cTax   = c => c.grossCapital * (c.depreciationPct / 100) * (c.taxBracketPct / 100);
+
+  // Year-1 depreciation is banked up front (the contract's day-one structure);
+  // the years 2–4 deductions only convert to cash as each contract year closes,
+  // so they are tracked separately until then.
+  function taxSplit(c) {
+    const bracket = c.taxBracketPct / 100;
+    const closed  = Math.floor(cMonthsIn(c) / 12);      // completed contract years
+    let earned = cTax(c), scheduled = 0;
+    [c.depYr2, c.depYr3, c.depYr4].forEach((d, i) => {
+      if (!d) return;
+      if (closed >= i + 2) earned += d * bracket; else scheduled += d * bracket;
+    });
+    return { earned, scheduled };
+  }
   const cDailyBtc = (c, diff) =>
     ((cTh(c) * Math.pow(10, 12) * 86400 * gcfg.blockReward) / (diff * Math.pow(2, 32)))
       * (1 - c.poolFeePct / 100);
@@ -817,13 +840,15 @@
   // Each contract has its own hashrate, pool fee and start date, so income
   // is computed per contract and summed — never from a blended average.
   function totalsFor(cs, price, diff) {
-    const t = { cs, per: [], rigs: 0, th: 0, gross: 0, tax: 0, prepaid: 0,
+    const t = { cs, per: [], rigs: 0, th: 0, gross: 0, tax: 0, taxSched: 0, prepaid: 0,
                 dailyBtc: 0, estBtc: 0, estUsd: 0, estAfter: 0 };
     for (const c of cs) {
       const dB = cDailyBtc(c, diff), d = cDays(c);
       t.per.push({ c, dailyBtc: dB });
       t.rigs += c.machines; t.th += cTh(c);
-      t.gross += c.grossCapital; t.tax += cTax(c); t.prepaid += c.prepaidPower;
+      const ts = taxSplit(c);
+      t.gross += c.grossCapital; t.tax += ts.earned; t.taxSched += ts.scheduled;
+      t.prepaid += c.prepaidPower;
       if (cLive(c)) t.dailyBtc += dB;          // not-yet-activated rigs earn nothing today
       t.estBtc   += dB * d;
       t.estUsd   += dB * price * d;
@@ -890,18 +915,26 @@
     // Recoupment hero + dual-color bar
     $("heroPct").textContent = pct.toFixed(1) + "%";
     $("heroCaption").textContent =
-      "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(t.gross);
-    const taxPct = t.gross > 0 ? Math.min(100, t.tax / t.gross * 100) : 0;
-    $("segTax").style.width     = taxPct + "%";
-    $("segAccrued").style.width = Math.max(0, Math.min(100 - taxPct,
-      t.gross > 0 ? t.estUsd / t.gross * 100 : 0)) + "%";
+      "of gross capital recovered — " + fmtUsd(recovered) + " of " + fmtUsd(t.gross) +
+      (t.taxSched > 0 ? " · " + fmtUsd(t.taxSched) + " more in tax benefits scheduled" : "");
+    const pctOf = v => t.gross > 0 ? Math.max(0, v / t.gross * 100) : 0;
+    const taxPct = Math.min(100, pctOf(t.tax));
+    const accPct = Math.max(0, Math.min(100 - taxPct, pctOf(t.estUsd)));
+    const schPct = Math.max(0, Math.min(100 - taxPct - accPct, pctOf(t.taxSched)));
+    $("segTax").style.width       = taxPct + "%";
+    $("segAccrued").style.width   = accPct + "%";
+    $("segScheduled").style.width = schPct + "%";
     $("recoupBar").setAttribute("aria-label",
-      "Recoupment: tax savings " + fmtUsd(t.tax) + ", mining income " + fmtUsd(t.estUsd) +
-      " (" + fmtUsd(t.estAfter) + " after tax), remaining " + fmtUsd(remaining) +
-      " of " + fmtUsd(t.gross));
+      "Recoupment: tax savings earned " + fmtUsd(t.tax) + ", mining income " + fmtUsd(t.estUsd) +
+      " (" + fmtUsd(t.estAfter) + " after tax)" +
+      (t.taxSched > 0 ? ", scheduled tax savings " + fmtUsd(t.taxSched) : "") +
+      ", remaining " + fmtUsd(remaining) + " of " + fmtUsd(t.gross));
     $("legendAccrued").textContent = fmtBtc(t.estBtc) + " BTC · " + fmtUsd(t.estUsd) +
       " (" + fmtUsd(t.estAfter) + " after tax)";
-    $("legendRemaining").textContent = fmtUsd(remaining);
+    $("legendSched").hidden = !(t.taxSched > 0);
+    if (t.taxSched > 0) $("legendSchedVal").textContent = fmtUsd(t.taxSched);
+    // The track left over is what still has to come from mining.
+    $("legendRemaining").textContent = fmtUsd(Math.max(0, remaining - t.taxSched));
 
     // On-chain card — the wallet receives payouts from every contract, so it
     // is always compared against the all-contracts estimate.
@@ -932,6 +965,7 @@
       const sAfter = sUsd * (1 - sel.miningTaxPct / 100), sTax = cTax(sel);
       $("tblHashrate").textContent   = cTh(sel).toLocaleString("en-US") + " TH/s";
       $("tblTaxSavings").textContent = fmtUsd(sTax);
+      $("tblSched").textContent      = fmtUsd(taxSplit(sel).scheduled);
       $("tblNetCapital").textContent = fmtUsd(sel.grossCapital - sTax);
       $("tblDays").textContent       = cLive(sel)
         ? Math.floor(sDays).toLocaleString("en-US") : "not yet activated";
