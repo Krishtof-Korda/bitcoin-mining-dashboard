@@ -26,6 +26,10 @@ Download it, open it in a browser, and it works.
   for the **next halving** (dated from the live block height), an assumed annual difficulty
   drift, and each contract's remaining prepaid term — so it flags when a contract will not
   break even before hosting runs out.
+- **Opportunity cost & return** — compares the contracts against simply investing the same
+  capital at a benchmark rate, using the full 48-month cash flow (capital out, mining income
+  monthly, tax benefits as each year closes). Reports NPV and **IRR**, so you can see whether
+  the deal actually beat the alternative.
 - **Wallet tracking (optional)** — paste your pool's payout address to see the actual BTC
   received on-chain alongside the estimate. Read-only: an address can never spend funds.
 - **Multiple contracts** — run several hardware deals side by side (each with its own
@@ -89,6 +93,9 @@ step month by month, halving the block reward every 210,000 blocks and compoundi
 assumed difficulty drift, and stop when each contract's prepaid term ends. Year-1 tax
 savings = gross capital × depreciation % × tax bracket %. The recoupment bar measures
 (tax savings + income to date) against gross capital.
+
+Opportunity cost discounts that same cash-flow series at your benchmark rate; IRR is solved
+by bisection and is the annualised return the contracts deliver.
 
 These are **estimates**: actual pool payouts vary with luck, fee structures, and
 difficulty adjustments (roughly every two weeks). Nothing here is financial or tax advice.
