@@ -217,6 +217,7 @@
     padding: 5px 13px; cursor: pointer; transition: border-color .15s, color .15s;
   }
   .sim-presets button:hover { border-color: var(--accent); color: var(--text-primary); }
+  .sim-presets button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .sim-assume { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .sim-assume label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
     text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; line-height: 1.3; }
@@ -458,8 +459,9 @@
   <section class="panel">
     <h2>Bull market simulator</h2>
     <div class="panel-sub">Defaults to the <strong>break-even price</strong> — what BTC has to reach for
-      the contracts to recoup gross capital exactly as the prepaid term ends. Type any price to explore;
-      the projection steps month by month and accounts for the next halving, your assumed difficulty
+      the contracts to recoup gross capital exactly as the prepaid term ends. Type any price to explore, or hit
+      <strong>Live price</strong> to follow the market — the tax model and opportunity cost below
+      follow whatever price is set here, so you can switch back and forth. The projection steps month by month and accounts for the next halving, your assumed difficulty
       drift, and each contract's remaining term.</div>
 
     <div class="sim-grid">
@@ -475,6 +477,7 @@
           <button type="button" data-price="250000">$250K</button>
           <button type="button" data-price="500000">$500K</button>
           <button type="button" data-be="1" id="simBe">Break-even</button>
+          <button type="button" data-live="1" id="simLive">Live price</button>
         </div>
         <div class="sim-assume">
           <div>
@@ -594,6 +597,7 @@
         "Mining tax" column is the exposure <em>if</em> that income were fully taxed and unsheltered.
         Assumes deductions offset other income. Not tax advice.
       </p>
+      <p class="cfg-note" id="ledgerScenario"></p>
       <div class="ledger-wrap">
         <table class="ledger-table" id="taxLedger" aria-label="Four-year after-tax tax projection">
           <thead>
@@ -653,6 +657,7 @@
         simulator. <strong>IRR</strong> is the annualised return the contracts actually deliver;
         beating your benchmark means the deal was worth the money. Not investment advice.
       </p>
+      <p class="cfg-note" id="oppScenario"></p>
       <table class="detail-table" aria-label="Opportunity cost and return">
         <tbody>
           <tr><th>Benchmark return if invested elsewhere (%/yr)</th><td class="num"><input id="cfgOpp" data-gkey="oppCostPct" type="number" min="0" max="50" step="0.5" aria-label="Benchmark return percent per year"></td></tr>
@@ -1007,15 +1012,12 @@
       renderComparison(price, diff);
     }
 
-    renderTaxLedger(t, price);
-    renderOpportunity(t, price);
-
     // Status line
     $("daysElapsed").textContent = t.cs.some(cLive)
       ? "Day " + Math.floor(days) + (sel ? " of contract" : " since first activation")
       : "Awaiting activation";
-    applyBreakEvenDefault();
-    renderSimulator();
+    applySimPrice();
+    renderScenario();
   }
 
   // ── All-contracts comparison table ────────────────────────────────────
@@ -1055,7 +1057,11 @@
   // ── Multi-year tax ledger (48-month projection) ───────────────────────
   // Income is stepped month by month so the halving and difficulty drift
   // land in the right contract year; deductions sum across the view.
-  function renderTaxLedger(t, price) {
+  // Months already past are valued at the live price (they actually happened);
+  // future months take the simulator's scenario price.
+  const priceAt = (whenMs, live, scenario) => whenMs <= Date.now() ? live : scenario;
+
+  function renderTaxLedger(t, live, scenario) {
     const deductions = [0, 0, 0, 0], benefits = [0, 0, 0, 0];
     const income = [0, 0, 0, 0], mtaxes = [0, 0, 0, 0];
 
@@ -1069,7 +1075,7 @@
         let yr = 0;
         for (let k = 0; k < 12; k++) {
           const when = startMs + ((i * 12 + k) + 0.5) * DAYS_PER_MONTH * 86400000;
-          yr += dailyBtc * price * DAYS_PER_MONTH * incomeMult(when);
+          yr += dailyBtc * priceAt(when, live, scenario) * DAYS_PER_MONTH * incomeMult(when);
         }
         income[i]  += yr;
         mtaxes[i]  += yr * mRate;
@@ -1113,7 +1119,7 @@
   // in-service date in view. Each contract books its capital at its own
   // start, mining income monthly across its term, and each year's tax
   // benefit at that contract year's end (roughly when the return is filed).
-  function cashFlows(t, price) {
+  function cashFlows(t, live, scenario) {
     const base = viewStart().getTime();
     const flows = [];
     for (const { c, dailyBtc } of t.per) {
@@ -1126,7 +1132,8 @@
         if (ded[y]) flows.push({ m: off + (y + 1) * 12, amt: ded[y] * bracket });
       for (let k = 0; k < c.termMonths; k++) {
         const when = s0 + (k + 0.5) * DAYS_PER_MONTH * 86400000;
-        flows.push({ m: off + k + 1, amt: dailyBtc * price * DAYS_PER_MONTH * incomeMult(when) });
+        flows.push({ m: off + k + 1,
+                     amt: dailyBtc * priceAt(when, live, scenario) * DAYS_PER_MONTH * incomeMult(when) });
       }
     }
     return flows;
@@ -1147,9 +1154,9 @@
     return (lo + hi) / 2;
   }
 
-  function renderOpportunity(t, price) {
+  function renderOpportunity(t, live, scenario) {
     const r = gcfg.oppCostPct / 100;
-    const flows = cashFlows(t, price);
+    const flows = cashFlows(t, live, scenario);
     const endM = flows.reduce((mx, f) => Math.max(mx, f.m), 0);
     const fv = sign => flows.reduce((sum, f) =>
       sum + (Math.sign(f.amt) === sign ? Math.abs(f.amt) * Math.pow(1 + r, (endM - f.m) / 12) : 0), 0);
@@ -1253,15 +1260,41 @@
     return price > 0 ? price : null;       // null ⇒ already recouped at any price
   }
 
-  // Until the field is touched, it tracks the live break-even price.
-  let simPriceTouched = false;
-  function applyBreakEvenDefault() {
-    if (simPriceTouched) return;
+  // "breakeven" and "live" keep tracking their source; "custom" is a typed value.
+  let simPriceMode = "breakeven";
+  function applySimPrice() {
+    document.querySelectorAll(".sim-presets button").forEach(b =>
+      b.classList.toggle("active", Boolean(     // toggle() ignores a non-boolean 2nd arg
+        (b.dataset.be && simPriceMode === "breakeven") || (b.dataset.live && simPriceMode === "live"))));
+    if (simPriceMode === "custom") return;
+    if (simPriceMode === "live") {
+      $("simPrice").value = Math.round(btcPrice ?? FALLBACK_PRICE).toLocaleString("en-US");
+      return;
+    }
     const t  = viewTotals(btcPrice ?? FALLBACK_PRICE, difficulty ?? FALLBACK_DIFFICULTY);
     const be = breakEvenPrice(t);
     // Round up: rounding down can leave the projection a dollar short and
     // flip the readout into the "past the term" branch.
     if (be !== null) $("simPrice").value = Math.ceil(be).toLocaleString("en-US");
+  }
+
+  // The tax model and opportunity cost follow the simulator price; the KPI
+  // row and recoupment bar stay pinned to live data.
+  function renderScenario() {
+    const live = btcPrice ?? FALLBACK_PRICE;
+    const t    = viewTotals(live, difficulty ?? FALLBACK_DIFFICULTY);
+    const scen = parseSimPrice() ?? live;
+    renderTaxLedger(t, live, scen);
+    renderOpportunity(t, live, scen);
+    const same = Math.abs(scen - live) < 1;
+    const note = same
+      ? "Valued at the live price of " + fmtUsd(live) +
+        " — change the simulator price above to model a scenario."
+      : "Future months valued at the simulator price of <strong>" + fmtUsd(scen) +
+        "</strong>; months already past stay at the live " + fmtUsd(live) + ".";
+    $("ledgerScenario").innerHTML = note;
+    $("oppScenario").innerHTML    = note;
+    renderSimulator();
   }
 
   function renderSimulator() {
@@ -1318,17 +1351,17 @@
     }
   }
 
-  $("simPrice").addEventListener("input", () => { simPriceTouched = true; renderSimulator(); });
+  $("simPrice").addEventListener("input", () => { simPriceMode = "custom"; applySimPrice(); renderScenario(); });
   document.querySelectorAll(".sim-presets button").forEach(btn => {
     btn.addEventListener("click", () => {
-      if (btn.dataset.be) {
-        simPriceTouched = false;           // hand it back to the live break-even
-        applyBreakEvenDefault();
-      } else {
-        simPriceTouched = true;
+      if (btn.dataset.be)        simPriceMode = "breakeven";
+      else if (btn.dataset.live)  simPriceMode = "live";
+      else {
+        simPriceMode = "custom";
         $("simPrice").value = Number(btn.dataset.price).toLocaleString("en-US");
       }
-      renderSimulator();
+      applySimPrice();
+      renderScenario();
     });
   });
   $("simPrice").addEventListener("blur", () => {
