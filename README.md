@@ -24,7 +24,10 @@ Download it, open it in a browser, and it works.
 - **Bull market simulator** — opens at the **break-even price**: what BTC has to reach for the
   contracts to recoup gross capital exactly as the prepaid term ends (solved in closed form, since
   mining income scales linearly with price). Type any price to explore, or hit **Break-even** to
-  snap back. The projection steps month by month and accounts
+  snap back, or **Live price** to follow the market. The **tax model** and **opportunity cost**
+  sections follow whichever price is set here, so you can see how the whole return profile scales
+  with a bull run; the KPI row and recoupment bar stay pinned to live data.
+  The projection steps month by month and accounts
   for the **next halving** (dated from the live block height), an assumed annual difficulty
   drift, and each contract's remaining prepaid term — so it flags when a contract will not
   break even before hosting runs out.
