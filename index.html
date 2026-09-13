@@ -667,7 +667,8 @@
         Forward projections step month by month: the block reward halves every 210,000 blocks (the date is
         derived from the live block height at ~10&nbsp;min/block, falling back to an estimate if that call
         fails), difficulty compounds at your assumed drift, and each contract stops earning when its
-        prepaid hosting term ends.
+        prepaid hosting term ends. If payback lands past that term, the months shown assume mining
+        continues anyway, flagged in red, with the shortfall at term end alongside.
         Estimates only — actual pool payouts vary with luck, fees, and difficulty adjustments. Not financial or tax advice.
       </p>
     </div>
@@ -1055,16 +1056,18 @@
   // Steps forward a month at a time, applying the halving, the assumed
   // difficulty drift and each contract's remaining prepaid term. Hosting
   // ends with the term, so a contract stops earning once it runs out.
-  function project(t, price, flat) {
+  const MAX_PROJECT_MONTHS = 600;   // 50 yrs — far enough to detect "never pays back"
+  function project(t, price, flat, ignoreTerm) {
     const target  = t.gross;
     const horizon = Math.ceil(Math.max(0, ...t.per.map(x => cMonthsLeft(x.c)), 0));
+    const limit   = ignoreTerm ? MAX_PROJECT_MONTHS : horizon;
     let cum = t.tax + t.estUsd;
     if (cum >= target) return { months: 0, done: true, horizon };
-    for (let m = 1; m <= horizon; m++) {
+    for (let m = 1; m <= limit; m++) {
       const mult = flat ? 1 : incomeMult(Date.now() + m * DAYS_PER_MONTH * 86400000);
       let monthly = 0;
       for (const { c, dailyBtc } of t.per)
-        if (m <= cMonthsLeft(c)) monthly += dailyBtc * price * DAYS_PER_MONTH * mult;
+        if (ignoreTerm || m <= cMonthsLeft(c)) monthly += dailyBtc * price * DAYS_PER_MONTH * mult;
       if (monthly <= 0) continue;
       if (cum + monthly >= target)
         return { months: m - 1 + (target - cum) / monthly, done: true, horizon };
@@ -1100,19 +1103,30 @@
       (hv.estimated ? ", est." : "") + ") · " + gcfg.diffDriftPct + "%/yr drift";
 
     const real = project(t, simPrice, false);
-    const flat = project(t, simPrice, true);
 
     if (real.months === 0) {
       $("simMonths").textContent = "Broke even";
       $("simMonthsDetail").textContent = "Gross capital already fully recovered";
     } else if (real.done) {
+      const flat = project(t, simPrice, true);
       $("simMonths").textContent = real.months.toFixed(1) + " mo";
       $("simMonthsDetail").textContent =
         (flat.done ? "vs " + flat.months.toFixed(1) + " mo flat · " : "") + hvNote;
     } else {
-      $("simMonths").innerHTML = '<span class="sim-warn">Not within term</span>';
-      $("simMonthsDetail").textContent = fmtUsd(real.shortfall) + " short when the " +
-        real.horizon + "-month prepaid term ends · " + hvNote;
+      // Past the prepaid term hosting stops, so keep projecting on the
+      // assumption mining continues — the month figure is still the most
+      // useful number, just flagged as beyond the contract.
+      const beyond = project(t, simPrice, false, true);
+      const flat   = project(t, simPrice, true,  true);
+      $("simMonths").innerHTML = beyond.done
+        ? '<span class="sim-warn">' + beyond.months.toFixed(1) + " mo</span>"
+        : '<span class="sim-warn">Never</span>';
+      $("simMonthsDetail").textContent =
+        (flat.done ? "vs " + flat.months.toFixed(1) + " mo flat · " : "") +
+        (beyond.done
+          ? "past the " + real.horizon + "-mo prepaid term (assumes mining continues), "
+          : "income decays below the balance at this price — ") +
+        fmtUsd(real.shortfall) + " short when hosting ends · " + hvNote;
     }
   }
 
