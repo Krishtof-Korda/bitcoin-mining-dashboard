@@ -457,8 +457,10 @@
   <!-- Bull market simulator -->
   <section class="panel">
     <h2>Bull market simulator</h2>
-    <div class="panel-sub">Type a hypothetical BTC price — the projection steps month by month and
-      accounts for the next halving, your assumed difficulty drift, and each contract's remaining term.</div>
+    <div class="panel-sub">Defaults to the <strong>break-even price</strong> — what BTC has to reach for
+      the contracts to recoup gross capital exactly as the prepaid term ends. Type any price to explore;
+      the projection steps month by month and accounts for the next halving, your assumed difficulty
+      drift, and each contract's remaining term.</div>
 
     <div class="sim-grid">
       <div class="sim-input">
@@ -472,6 +474,7 @@
           <button type="button" data-price="150000">$150K</button>
           <button type="button" data-price="250000">$250K</button>
           <button type="button" data-price="500000">$500K</button>
+          <button type="button" data-be="1" id="simBe">Break-even</button>
         </div>
         <div class="sim-assume">
           <div>
@@ -641,6 +644,28 @@
       </div>
       <p class="cfg-note" id="ledgerSummary"></p>
 
+      <div class="details-h">Opportunity cost &amp; return</div>
+      <p class="wallet-note">
+        Capital tied up in mining is capital not earning elsewhere. This compares the contracts
+        against simply investing the same money at your benchmark rate — using the full 48-month
+        cash flow (capital out at each contract's start, mining income monthly, each year's tax
+        benefit at that year's end) with the same halving and difficulty assumptions as the
+        simulator. <strong>IRR</strong> is the annualised return the contracts actually deliver;
+        beating your benchmark means the deal was worth the money. Not investment advice.
+      </p>
+      <table class="detail-table" aria-label="Opportunity cost and return">
+        <tbody>
+          <tr><th>Benchmark return if invested elsewhere (%/yr)</th><td class="num"><input id="cfgOpp" data-gkey="oppCostPct" type="number" min="0" max="50" step="0.5" aria-label="Benchmark return percent per year"></td></tr>
+          <tr><th>Capital deployed</th><td class="num" id="oppCapital">—</td></tr>
+          <tr><th>Value if invested at the benchmark instead (by term end)</th><td class="num" id="oppBench">—</td></tr>
+          <tr><th>Mining proceeds + tax benefits, reinvested (by term end)</th><td class="num" id="oppMine">—</td></tr>
+          <tr><th>Advantage vs investing elsewhere</th><td class="num" id="oppDiff">—</td></tr>
+          <tr><th>Net present value at the benchmark rate</th><td class="num" id="oppNpv">—</td></tr>
+          <tr><th>Internal rate of return (IRR)</th><td class="num" id="oppIrr">—</td></tr>
+        </tbody>
+      </table>
+      <p class="cfg-note" id="oppSummary"></p>
+
       <div class="details-h">Wallet tracking (optional)</div>
       <p class="wallet-note">
         Paste the payout address(es) your pool sends rewards to. The dashboard then shows the
@@ -705,7 +730,7 @@
       depreciationPct: 70,   // Year-1 depreciation baseline
       taxBracketPct: 42,     // high-earner bracket (deductions offset other income)
       miningTaxPct: 42,      // ordinary income tax on mined BTC at receipt
-      depYr2: 0, depYr3: 0, depYr4: 0,   // years 2–4 deductions — fill from your K-1
+      depYr2: 20600, depYr3: 20600, depYr4: 20600,   // 10% of gross each (70 + 30 = 100%)
       startDate: "2026-06-25", termMonths: 48,
     },
     {
@@ -713,7 +738,7 @@
       minerModel: "Bitmain Antminer S21 XP", machines: 5, thPerMachine: 270,
       grossCapital: 99000, prepaidPower: 39600, poolFeePct: 2,
       depreciationPct: 70, taxBracketPct: 42, miningTaxPct: 42,
-      depYr2: 0, depYr3: 0, depYr4: 0,
+      depYr2: 9900, depYr3: 9900, depYr4: 9900,      // 10% of gross each
       startDate: "2026-09-01", termMonths: 48,
     },
   ];
@@ -721,6 +746,7 @@
     blockReward: 3.125,
     diffDriftPct: 15,       // assumed annual network difficulty growth
     halvingNudgePct: -5,    // one-off difficulty level shift at the halving
+    oppCostPct: 8,          // what the capital could earn elsewhere, %/yr
     selected: "all",
   };
 
@@ -982,11 +1008,13 @@
     }
 
     renderTaxLedger(t, price);
+    renderOpportunity(t, price);
 
     // Status line
     $("daysElapsed").textContent = t.cs.some(cLive)
       ? "Day " + Math.floor(days) + (sel ? " of contract" : " since first activation")
       : "Awaiting activation";
+    applyBreakEvenDefault();
     renderSimulator();
   }
 
@@ -1080,6 +1108,79 @@
       ". If mining income is fully taxed and unsheltered: " + fmtUsd(totalAfter) + ".";
   }
 
+  // ── Opportunity cost: NPV / IRR against a benchmark return ────────────
+  // Cash flows on an absolute month timeline, month 0 = the earliest
+  // in-service date in view. Each contract books its capital at its own
+  // start, mining income monthly across its term, and each year's tax
+  // benefit at that contract year's end (roughly when the return is filed).
+  function cashFlows(t, price) {
+    const base = viewStart().getTime();
+    const flows = [];
+    for (const { c, dailyBtc } of t.per) {
+      const s0  = cStart(c).getTime();
+      const off = Math.round((s0 - base) / (DAYS_PER_MONTH * 86400000));
+      flows.push({ m: off, amt: -c.grossCapital });
+      const bracket = c.taxBracketPct / 100;
+      const ded = [c.grossCapital * (c.depreciationPct / 100), c.depYr2, c.depYr3, c.depYr4];
+      for (let y = 0; y < 4; y++)
+        if (ded[y]) flows.push({ m: off + (y + 1) * 12, amt: ded[y] * bracket });
+      for (let k = 0; k < c.termMonths; k++) {
+        const when = s0 + (k + 0.5) * DAYS_PER_MONTH * 86400000;
+        flows.push({ m: off + k + 1, amt: dailyBtc * price * DAYS_PER_MONTH * incomeMult(when) });
+      }
+    }
+    return flows;
+  }
+
+  const npvAt = (flows, r) =>
+    flows.reduce((sum, f) => sum + f.amt / Math.pow(1 + r, f.m / 12), 0);
+
+  // Bisection: NPV falls monotonically in r for a conventional outlay-then-income profile.
+  function irrOf(flows) {
+    const f = r => npvAt(flows, r);
+    let lo = -0.95, hi = 5;
+    if (!(f(lo) > 0) || !(f(hi) < 0)) return null;     // no sign change → undefined
+    for (let i = 0; i < 200; i++) {
+      const mid = (lo + hi) / 2;
+      if (f(mid) > 0) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  function renderOpportunity(t, price) {
+    const r = gcfg.oppCostPct / 100;
+    const flows = cashFlows(t, price);
+    const endM = flows.reduce((mx, f) => Math.max(mx, f.m), 0);
+    const fv = sign => flows.reduce((sum, f) =>
+      sum + (Math.sign(f.amt) === sign ? Math.abs(f.amt) * Math.pow(1 + r, (endM - f.m) / 12) : 0), 0);
+
+    const benchFV = fv(-1);          // the capital, compounded at the benchmark instead
+    const mineFV  = fv(1);           // mining proceeds, reinvested at the same rate
+    const diff    = mineFV - benchFV;
+    const npv     = npvAt(flows, r);
+    const irr     = irrOf(flows);
+    const yrs     = endM / 12;
+
+    const cls = v => v >= 0 ? "num tax-benefit" : "num tax-owed";
+    const set = (id, txt, klass) => { const el = $(id); el.textContent = txt; if (klass) el.className = klass; };
+
+    set("oppCapital",  fmtUsd(t.gross));
+    set("oppBench",    fmtUsd(benchFV));
+    set("oppMine",     fmtUsd(mineFV));
+    set("oppDiff",     (diff >= 0 ? "+" : "−") + fmtUsd(Math.abs(diff)), cls(diff));
+    set("oppNpv",      (npv  >= 0 ? "+" : "−") + fmtUsd(Math.abs(npv)),  cls(npv));
+    set("oppIrr",      irr === null ? "—" : (irr * 100).toFixed(1) + "%",
+                       irr === null ? "num" : cls(irr - r));
+    $("oppSummary").innerHTML = irr === null
+      ? "At this price the contracts never return the capital, so there is no meaningful rate of return to compare."
+      : "Over " + yrs.toFixed(1) + " years the contracts return <strong>" + (irr * 100).toFixed(1) +
+        "%/yr</strong> against your " + gcfg.oppCostPct + "% benchmark — " +
+        (diff >= 0
+          ? "<span class=\"tax-benefit\">ahead by " + fmtUsd(diff) + "</span> by the end of the term."
+          : "<span class=\"tax-owed\">behind by " + fmtUsd(Math.abs(diff)) + "</span> by the end of the term.") +
+        " Mining income is counted pre-tax and assumed reinvested at the same benchmark rate.";
+  }
+
   // ── Bull market simulator ─────────────────────────────────────────────
   function parseSimPrice() {
     const raw = $("simPrice").value.replace(/[^0-9.]/g, "");
@@ -1095,11 +1196,24 @@
     const target  = t.gross;
     const horizon = Math.ceil(Math.max(0, ...t.per.map(x => cMonthsLeft(x.c)), 0));
     const limit   = ignoreTerm ? MAX_PROJECT_MONTHS : horizon;
-    let cum = t.tax + t.estUsd;
+    let cum = t.tax + t.estUsd;            // year-1 savings are treated as banked
     if (cum >= target) return { months: 0, done: true, horizon };
+
+    // Years 2–4 deductions pay out as lump sums as each contract year closes.
+    const lumps = [];
+    for (const { c } of t.per) {
+      const bracket = c.taxBracketPct / 100;
+      [c.depYr2, c.depYr3, c.depYr4].forEach((d, i) => {
+        if (!d) return;
+        const at = (i + 2) * 12 - cMonthsIn(c);
+        if (at > 0) lumps.push({ m: Math.ceil(at), amt: d * bracket });
+      });
+    }
+
     for (let m = 1; m <= limit; m++) {
       const mult = flat ? 1 : incomeMult(Date.now() + m * DAYS_PER_MONTH * 86400000);
       let monthly = 0;
+      for (const lump of lumps) if (lump.m === m) monthly += lump.amt;
       for (const { c, dailyBtc } of t.per)
         if (ignoreTerm || m <= cMonthsLeft(c)) monthly += dailyBtc * price * DAYS_PER_MONTH * mult;
       if (monthly <= 0) continue;
@@ -1108,6 +1222,46 @@
       cum += monthly;
     }
     return { months: null, done: false, horizon, shortfall: target - cum };
+  }
+
+  // The BTC price at which the contracts recoup gross capital exactly as the
+  // prepaid term ends. Mining income scales linearly with price while the tax
+  // benefits do not, so this solves in closed form instead of searching.
+  function breakEvenPrice(t) {
+    const horizon = Math.ceil(Math.max(0, ...t.per.map(x => cMonthsLeft(x.c)), 0));
+    if (horizon <= 0) return null;
+
+    let fixed = t.tax + t.estUsd;          // banked tax savings + income already accrued
+    for (const { c } of t.per) {
+      const bracket = c.taxBracketPct / 100;
+      [c.depYr2, c.depYr3, c.depYr4].forEach((d, i) => {
+        if (!d) return;
+        const at = (i + 2) * 12 - cMonthsIn(c);
+        if (at > 0 && Math.ceil(at) <= horizon) fixed += d * bracket;   // lands inside the term
+      });
+    }
+
+    let perDollar = 0;                     // BTC mined per $1 of price over the remaining term
+    for (let m = 1; m <= horizon; m++) {
+      const mult = incomeMult(Date.now() + m * DAYS_PER_MONTH * 86400000);
+      for (const { c, dailyBtc } of t.per)
+        if (m <= cMonthsLeft(c)) perDollar += dailyBtc * DAYS_PER_MONTH * mult;
+    }
+    if (perDollar <= 0) return null;
+
+    const price = (t.gross - fixed) / perDollar;
+    return price > 0 ? price : null;       // null ⇒ already recouped at any price
+  }
+
+  // Until the field is touched, it tracks the live break-even price.
+  let simPriceTouched = false;
+  function applyBreakEvenDefault() {
+    if (simPriceTouched) return;
+    const t  = viewTotals(btcPrice ?? FALLBACK_PRICE, difficulty ?? FALLBACK_DIFFICULTY);
+    const be = breakEvenPrice(t);
+    // Round up: rounding down can leave the projection a dollar short and
+    // flip the readout into the "past the term" branch.
+    if (be !== null) $("simPrice").value = Math.ceil(be).toLocaleString("en-US");
   }
 
   function renderSimulator() {
@@ -1158,16 +1312,22 @@
       $("simMonthsDetail").textContent =
         (flat.done ? "vs " + flat.months.toFixed(1) + " mo flat · " : "") +
         (beyond.done
-          ? "past the " + real.horizon + "-mo prepaid term (assumes mining continues), "
+          ? "assumes mining continues past each contract's term, "
           : "income decays below the balance at this price — ") +
         fmtUsd(real.shortfall) + " short when hosting ends · " + hvNote;
     }
   }
 
-  $("simPrice").addEventListener("input", renderSimulator);
+  $("simPrice").addEventListener("input", () => { simPriceTouched = true; renderSimulator(); });
   document.querySelectorAll(".sim-presets button").forEach(btn => {
     btn.addEventListener("click", () => {
-      $("simPrice").value = Number(btn.dataset.price).toLocaleString("en-US");
+      if (btn.dataset.be) {
+        simPriceTouched = false;           // hand it back to the live break-even
+        applyBreakEvenDefault();
+      } else {
+        simPriceTouched = true;
+        $("simPrice").value = Number(btn.dataset.price).toLocaleString("en-US");
+      }
       renderSimulator();
     });
   });
